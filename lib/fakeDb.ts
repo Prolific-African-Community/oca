@@ -1,6 +1,6 @@
 // ===== STUDENTS =====
 
-type Student = {
+export type Student = {
   id: string;
   firstName: string;
   lastName: string;
@@ -10,6 +10,8 @@ type Student = {
   semester: string;
   courses: string[];
   password: string;
+  universityId: string;
+  role: "student";
 };
 
 // @ts-ignore
@@ -21,13 +23,14 @@ if (!globalThis._students) {
 // @ts-ignore
 export const students: Student[] = globalThis._students;
 
+
 // ===== USERS =====
 
-type User = {
+export type User = {
   id: string;
   email: string;
   password: string;
-  role: string;
+  role: "superadmin" | "admin" | "student";
   universityId?: string;
 };
 
@@ -47,13 +50,14 @@ if (!globalThis._users) {
 // @ts-ignore
 export const users: User[] = globalThis._users;
 
+
 // ===== UNIVERSITIES =====
 
 export type University = {
   id: string;
   name: string;
   adminEmail: string;
-  status: string; // ← au lieu de "active" | "inactive"
+  status: "active" | "inactive";
 };
 
 // @ts-ignore
@@ -64,5 +68,3 @@ if (!globalThis._universities) {
 
 // @ts-ignore
 export const universities: University[] = globalThis._universities;
-
-
