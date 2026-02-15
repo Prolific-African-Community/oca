@@ -38,7 +38,7 @@ export default function StudentDashboard() {
                 className={`bg-pixel-blue text-white px-6 py-3 rounded-lg font-semibold hover:brightness-110 transition ${
                   activeTab === item.key
                     ? "no-border text-white shadow-lg"
-                    : "text-slate-800 no-border hover:bg-white/10 hover:bg-pixel-blue hover:bg-yellow-500 hover:text-black"
+                    : "text-white no-border hover:bg-white/10 hover:bg-pixel-blue hover:bg-yellow-500 hover:text-black"
                 }`}
               >
                 {item.label}
@@ -167,3 +167,4 @@ export default function StudentDashboard() {
     </div>
   );
 }
+
