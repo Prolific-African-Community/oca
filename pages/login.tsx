@@ -65,9 +65,7 @@ export default function LoginPage() {
       <div className="max-w-5xl w-full">
 
         <div className="text-center mb-16">
-          <h1 className={`text-5xl md:text-6xl font-semibold ${TITLE_GRADIENT}`}>
-            Accès à la plateforme
-          </h1>
+          
           <p className="text-slate-600 mt-6 text-lg">
             Connectez-vous pour accéder à votre espace.
           </p>
@@ -129,4 +127,5 @@ export default function LoginPage() {
     </main>
   );
 }
+
 
