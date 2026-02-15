@@ -36,9 +36,9 @@ export default function CoursePage() {
             <button
               key={item.key}
               onClick={() => setActiveTab(item.key)}
-              className={`bg-pixel-blue w-full text-left px-4 py-3 rounded-xl transition ${
+              className={`bg-pixel-blue text-white w-full text-left px-4 py-3 rounded-xl transition ${
                 activeTab === item.key
-                  ? "bg-pixel-blue text-white"
+                  ? "bg-pixel-blue bg-yellow-500 text-white"
                   : "hover:bg-white/10 hover:text-white hover:tex-black"
               }`}
             >
@@ -202,4 +202,5 @@ export default function CoursePage() {
     </div>
   );
 }
+
 
