@@ -1,0 +1,14 @@
+@tailwind components;
+@tailwind utilities;
+button {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.bg-pixel-blue {
+  background-color: #0b2c6f;
+  background-image:
+    linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px);
+  background-size: 6px 6px;
+}
