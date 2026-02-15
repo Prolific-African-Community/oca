@@ -22,12 +22,13 @@ export default function handler(
     return res.status(400).json({ message: "Email already used" });
   }
 
-  const newUniversity = {
-    id: Date.now().toString(),
-    name,
-    adminEmail,
-    status: "active",
-  };
+const newUniversity: University = {
+  id: Date.now().toString(),
+  name,
+  adminEmail,
+  status: "active",
+};
+
 
   universities.push(newUniversity);
 
@@ -47,6 +48,7 @@ export default function handler(
     admin: newAdminUser,
   });
 }
+
 
 
 
