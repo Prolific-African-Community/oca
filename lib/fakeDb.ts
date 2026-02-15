@@ -66,6 +66,8 @@ export const users: User[] = global._users;
 /* ===================== UNIVERSITIES ====================== */
 /* ========================================================= */
 
+export type UniversityStatus = "active" | "inactive";
+
 export type University = {
   id: string;
   name: string;
@@ -82,3 +84,4 @@ if (!global._universities) {
 }
 
 export const universities: University[] = global._universities;
+
