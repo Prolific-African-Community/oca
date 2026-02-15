@@ -39,7 +39,7 @@ export default function CoursePage() {
               className={`bg-pixel-blue text-white px-6 py-3 rounded-lg font-semibold hover:brightness-110 transition ${
                 activeTab === item.key
                   ? "bg-pixel-blue bg-yellow-500 text-white"
-                  : "hover:bg-white/10 hover:text-white hover:tex-black"
+                  : "hover:bg-white/70 hover:text-white hover:tex-black"
               }`}
             >
               {item.label}
@@ -69,7 +69,7 @@ export default function CoursePage() {
 
               <div className="w-full bg-slate-200 h-3 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-blue-800 to-orange-500"
+                  className="h-full bg-pixel-blue"
                   style={{ width: "45%" }}
                 />
               </div>
@@ -102,7 +102,7 @@ export default function CoursePage() {
           <a className="no-underline relative flex items-center gap-6 bg-white p-6 rounded-2xl shadow-sm hover:shadow-xl transition duration-300 group">
 
             {/* Accent bar */}
-            <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-blue-800 to-orange-500 rounded-l-2xl opacity-0 group-hover:opacity-100 transition" />
+            <div className="absolute left-0 top-0 h-full w-1 bg-pixel-blue rounded-l-2xl opacity-0 group-hover:opacity-100 transition" />
 
             {/* Number */}
             <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-slate-100 font-semibold text-slate-700">
@@ -117,7 +117,7 @@ export default function CoursePage() {
 
               <div className="mt-3 w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-blue-800 to-orange-500"
+                  className="h-full bg-pixel-blue"
                   style={{ width: `${module.progress}%` }}
                 />
               </div>
@@ -164,7 +164,7 @@ export default function CoursePage() {
               Mardi – 14:00
             </p>
 
-            <button className="px-8 py-4 rounded-full text-white bg-gradient-to-r from-blue-800 to-orange-500 hover:opacity-90 transition">
+            <button className="px-8 py-4 rounded-full text-white bg-pixel-blue hover:opacity-90 transition">
               Rejoindre la session
             </button>
           </div>
@@ -202,6 +202,7 @@ export default function CoursePage() {
     </div>
   );
 }
+
 
 
 
