@@ -215,7 +215,7 @@ export default function OCAHome() {
         </div>
       </section>
 
-      {/* PLATFORM FLOW */}}
+      {/* PLATFORM FLOW */}
       <section className={SECTION_Y}>
         <div className="max-w-6xl mx-auto px-8 text-center">
           <h2 className="text-5xl font-semibold mb-20 text-blue-900">
@@ -377,3 +377,4 @@ export default function OCAHome() {
     </main>
   );
 }
+
