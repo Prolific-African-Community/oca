@@ -3,7 +3,6 @@
 /* ========================================================= */
 
 export type UserRole = "superadmin" | "admin" | "student";
-export type UniversityStatus = "active" | "inactive";
 
 /* ========================================================= */
 /* ====================== STUDENTS ========================= */
@@ -84,4 +83,5 @@ if (!global._universities) {
 }
 
 export const universities: University[] = global._universities;
+
 
