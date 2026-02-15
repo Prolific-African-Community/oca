@@ -73,39 +73,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Sélection visuelle (optionnelle mais on la garde pour UX) */}
-        <div className="grid md:grid-cols-2 gap-10 mb-16">
-
-          <div
-            onClick={() => setRole("student")}
-            className={`cursor-pointer relative p-12 rounded-b-3xl border bg-white transition duration-500 hover:-translate-y-2 ${
-              role === "student" ? "border-orange-400" : "border-slate-200"
-            } ${CARD_GLOW}`}
-          >
-            <div className="absolute top-0 left-0 w-full h-[4px] bg-yellow-600" />
-            <h2 className="text-2xl font-semibold text-slate-900 mb-4">
-              Espace Étudiant
-            </h2>
-            <p className="text-slate-600">
-              Accès aux cours et progression académique.
-            </p>
-          </div>
-
-          <div
-            onClick={() => setRole("partner")}
-            className={`cursor-pointer relative p-12 rounded-b-3xl border bg-white transition duration-500 hover:-translate-y-2 ${
-              role === "partner" ? "border-orange-400" : "border-slate-200"
-            } ${CARD_GLOW}`}
-          >
-            <div className="absolute top-0 left-0 w-full h-[4px] bg-pixel-blue" />
-            <h2 className="text-2xl font-semibold text-slate-900 mb-4">
-              Universités & Administration
-            </h2>
-            <p className="text-slate-600">
-              Accès réservé aux administrateurs et enseignants.
-            </p>
-          </div>
-        </div>
 
         {/* Formulaire */}
         <div className="bg-white border border-slate-200 rounded-3xl p-12 shadow-xl transition-all duration-500">
@@ -162,3 +129,4 @@ export default function LoginPage() {
     </main>
   );
 }
+
