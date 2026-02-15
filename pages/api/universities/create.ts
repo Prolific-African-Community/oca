@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import type { University } from "../../../lib/fakeDb";
+
 
 export default function handler(
   req: NextApiRequest,
@@ -46,4 +46,5 @@ export default function handler(
     admin: newAdminUser,
   });
 }
+
 
