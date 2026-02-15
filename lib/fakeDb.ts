@@ -49,11 +49,11 @@ export const users: User[] = globalThis._users;
 
 // ===== UNIVERSITIES =====
 
-type University = {
+export type University = {
   id: string;
   name: string;
   adminEmail: string;
-  status: "active" | "inactive";
+  status: string; // ← au lieu de "active" | "inactive"
 };
 
 // @ts-ignore
@@ -64,3 +64,4 @@ if (!globalThis._universities) {
 
 // @ts-ignore
 export const universities: University[] = globalThis._universities;
+
