@@ -1,4 +1,13 @@
-// ===== STUDENTS =====
+/* ========================================================= */
+/* ===================== GLOBAL TYPES ====================== */
+/* ========================================================= */
+
+export type UserRole = "superadmin" | "admin" | "student";
+export type UniversityStatus = "active" | "inactive";
+
+/* ========================================================= */
+/* ====================== STUDENTS ========================= */
+/* ========================================================= */
 
 export type Student = {
   id: string;
@@ -14,30 +23,34 @@ export type Student = {
   role: "student";
 };
 
-// @ts-ignore
-if (!globalThis._students) {
-  // @ts-ignore
-  globalThis._students = [];
+declare global {
+  var _students: Student[] | undefined;
 }
 
-// @ts-ignore
-export const students: Student[] = globalThis._students;
+if (!global._students) {
+  global._students = [];
+}
 
+export const students: Student[] = global._students;
 
-// ===== USERS =====
+/* ========================================================= */
+/* ======================== USERS ========================== */
+/* ========================================================= */
 
 export type User = {
   id: string;
   email: string;
   password: string;
-  role: string;
+  role: UserRole;
   universityId?: string;
 };
 
-// @ts-ignore
-if (!globalThis._users) {
-  // @ts-ignore
-  globalThis._users = [
+declare global {
+  var _users: User[] | undefined;
+}
+
+if (!global._users) {
+  global._users = [
     {
       id: "1",
       email: "superadmin@oca.com",
@@ -47,26 +60,25 @@ if (!globalThis._users) {
   ];
 }
 
-// @ts-ignore
-export const users: User[] = globalThis._users;
+export const users: User[] = global._users;
 
-
-// ===== UNIVERSITIES =====
+/* ========================================================= */
+/* ===================== UNIVERSITIES ====================== */
+/* ========================================================= */
 
 export type University = {
   id: string;
   name: string;
   adminEmail: string;
-  status: string;
+  status: UniversityStatus;
 };
 
-// @ts-ignore
-if (!globalThis._universities) {
-  // @ts-ignore
-  globalThis._universities = [];
+declare global {
+  var _universities: University[] | undefined;
 }
 
-// @ts-ignore
-export const universities: University[] = globalThis._universities;
+if (!global._universities) {
+  global._universities = [];
+}
 
-
+export const universities: University[] = global._universities;
