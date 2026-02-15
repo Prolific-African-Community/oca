@@ -27,7 +27,7 @@ type User = {
   id: string;
   email: string;
   password: string;
-  role: "superadmin" | "admin" | "student";
+  role: string;
   universityId?: string;
 };
 
@@ -64,4 +64,5 @@ if (!globalThis._universities) {
 
 // @ts-ignore
 export const universities: University[] = globalThis._universities;
+
 
