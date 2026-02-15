@@ -57,7 +57,7 @@ export type University = {
   id: string;
   name: string;
   adminEmail: string;
-  status: "active" | "inactive";
+  status: string;
 };
 
 // @ts-ignore
@@ -68,3 +68,4 @@ if (!globalThis._universities) {
 
 // @ts-ignore
 export const universities: University[] = globalThis._universities;
+
