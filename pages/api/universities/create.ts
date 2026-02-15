@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { universities, users } from "../../../lib/fakeDb";
+import type { University } from "../../../lib/fakeDb";
+
 
 
 export default function handler(
@@ -48,6 +50,7 @@ const newUniversity: University = {
     admin: newAdminUser,
   });
 }
+
 
 
 
