@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { students, users } from "../../../lib/fakeDb";
-
+import type { Student, User } from "../../../lib/fakeDb";
 
 export default function handler(
   req: NextApiRequest,
@@ -22,6 +22,7 @@ export default function handler(
     universityId,
   } = req.body;
 
+  // Validation minimale
   if (!firstName || !lastName || !email || !password || !universityId) {
     return res.status(400).json({ message: "Champs manquants" });
   }
@@ -32,15 +33,16 @@ export default function handler(
     return res.status(400).json({ message: "Email déjà utilisé" });
   }
 
-  const newStudent = {
+  // Création Student typée strictement
+  const newStudent: Student = {
     id: Date.now().toString(),
     firstName,
     lastName,
     email,
-    faculty,
-    program,
-    semester,
-    courses,
+    faculty: faculty || "",
+    program: program || "",
+    semester: semester || "",
+    courses: courses || [],
     password,
     universityId,
     role: "student",
@@ -48,19 +50,16 @@ export default function handler(
 
   students.push(newStudent);
 
-  // IMPORTANT → pour permettre login
-  users.push({
+  // Création User typé strictement
+  const newUser: User = {
     id: newStudent.id,
     email: newStudent.email,
     password: newStudent.password,
     role: "student",
     universityId: newStudent.universityId,
-  });
+  };
+
+  users.push(newUser);
 
   return res.status(200).json(newStudent);
 }
-
-
-
-
-
