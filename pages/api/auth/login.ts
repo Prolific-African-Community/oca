@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { students, users } from "../../../lib/fakeDb";
 import { users } from "../../../lib/fakeDb";
 
 export default function handler(
@@ -17,3 +18,4 @@ export default function handler(
 
   return res.status(200).json(user);
 }
+
