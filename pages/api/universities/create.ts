@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { universities, users } from "../../../lib/fakeDb";
 import type { University } from "../../../lib/fakeDb";
+import type { User, UserRole } from "../../../lib/fakeDb";
+
 
 
 
@@ -35,13 +37,14 @@ const newUniversity: University = {
   universities.push(newUniversity);
 
   // Création du user admin lié
-  const newAdminUser = {
-    id: Date.now().toString() + "_admin",
-    email: adminEmail,
-    password: adminPassword,
-    role: "admin",
-    universityId: newUniversity.id,
-  };
+  const newAdminUser: User = {
+  id: Date.now().toString() + "_admin",
+  email: adminEmail,
+  password: adminPassword,
+  role: "admin",
+  universityId: newUniversity.id,
+};
+
 
   users.push(newAdminUser);
 
@@ -50,6 +53,7 @@ const newUniversity: University = {
     admin: newAdminUser,
   });
 }
+
 
 
 
