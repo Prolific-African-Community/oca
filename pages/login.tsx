@@ -1,131 +1,163 @@
-"use client";
-
-import { useState } from "react";
-import { useRouter } from "next/router";
-
-const TITLE_GRADIENT =
-  "bg-pixel-blue bg-clip-text text-transparent";
-
-const ACCENT_GRADIENT =
-  "bg-pixel-blue";
-
-const CARD_GLOW =
-  "hover:shadow-[0_30px_80px_-20px_rgba(30,64,175,0.25)]";
+import { useState } from 'react';
+import { useRouter } from 'next/router';
+import Head from 'next/head';
+import Link from 'next/link';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Wordmark } from '../components/brand/Wordmark';
+import { AuthScene } from '../components/illustrations/AuthScene';
+import { Aurora, GridField, Orbits, NoiseOverlay } from '../components/illustrations/Backdrop';
 
 export default function LoginPage() {
   const router = useRouter();
 
-  const [role, setRole] = useState<"student" | "partner" | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
+    setError('');
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
 
       const user = await res.json();
 
       if (!res.ok) {
-        throw new Error(user.message || "Erreur de connexion");
+        throw new Error(user.message || 'Erreur de connexion');
       }
 
-      localStorage.setItem("user", JSON.stringify(user));
-
+      localStorage.setItem('user', JSON.stringify(user));
 
       // Redirection selon rôle
-      if (user.role === "superadmin") {
-        router.push("/superadmin");
-      } else if (user.role === "admin") {
-        router.push("/admin");
-      } else if (user.role === "student") {
-        router.push("/student");
+      if (user.role === 'superadmin') {
+        router.push('/superadmin');
+      } else if (user.role === 'admin') {
+        router.push('/admin');
+      } else if (user.role === 'student') {
+        router.push('/student');
       } else {
-        throw new Error("Rôle inconnu");
+        throw new Error('Rôle inconnu');
       }
-
     } catch (err: any) {
-      setError(err.message || "Erreur serveur");
+      setError(err.message || 'Erreur serveur');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white via-slate-100 to-white px-6 flex items-center justify-center">
-      <div className="max-w-5xl w-full">
+    <>
+      <Head>
+        <title>Connexion · Open Campus Africa</title>
+      </Head>
 
-        <div className="text-center mb-16">
-          
-          <p className="text-slate-600 mt-6 text-lg">
-            Connectez-vous pour accéder à votre espace.
-          </p>
-        </div>
+      <main className="grid min-h-screen bg-page lg:grid-cols-[1.05fr_1fr]">
+        {/* LEFT — brand panel */}
+        <aside
+          className="relative hidden overflow-hidden px-14 py-12 lg:flex lg:flex-col lg:justify-between"
+          style={{
+            background:
+              'radial-gradient(130% 100% at 15% 0%, #16386f 0%, #0b2a68 44%, #071c4a 100%)',
+          }}
+        >
+          <Aurora />
+          <GridField tone="dark" />
+          <Orbits
+            tone="dark"
+            className="left-1/2 top-[46%] h-[120%] w-[120%] -translate-x-1/2 -translate-y-1/2 opacity-60"
+          />
 
+          <div className="relative">
+            <Wordmark tone="white" />
+          </div>
 
-        {/* Formulaire */}
-        <div className="bg-white border border-slate-200 rounded-3xl p-12 shadow-xl transition-all duration-500">
-          <h3 className="text-3xl font-semibold text-slate-900 mb-10 text-center">
-            Connexion
-          </h3>
+          <div className="relative flex flex-1 items-center justify-center py-6">
+            <AuthScene className="w-full max-w-[380px] animate-float-slow" />
+          </div>
 
-          <form onSubmit={handleSubmit} className="max-w-xl mx-auto space-y-6">
+          <div className="relative max-w-md">
+            <h2 className="text-3xl font-medium leading-tight tracking-tightest text-white">
+              Repenser l’université.
+              <br />
+              Structurer l’avenir.
+            </h2>
+            <p className="mt-4 text-[15px] leading-relaxed text-white/60">
+              L’environnement académique numérique des universités africaines —
+              cours, crédits, sessions live et progression, réunis.
+            </p>
+          </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Email
-              </label>
-              <input
+          <NoiseOverlay />
+        </aside>
+
+        {/* RIGHT — form */}
+        <section className="flex items-center justify-center px-6 py-16 sm:px-12">
+          <div className="w-full max-w-sm animate-fade-up">
+            <div className="mb-10 lg:hidden">
+              <Wordmark />
+            </div>
+
+            <h1 className="text-[28px] font-medium tracking-tightest text-ink">
+              Bon retour
+            </h1>
+            <p className="mt-2 text-[15px] text-ink/55">
+              Connectez-vous pour accéder à votre espace.
+            </p>
+
+            <form onSubmit={handleSubmit} className="mt-9 space-y-5">
+              <Input
+                label="Email"
                 type="email"
                 required
+                autoComplete="email"
+                placeholder="nom@universite.africa"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-5 py-4 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 transition"
               />
-            </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Mot de passe
-              </label>
-              <input
+              <Input
+                label="Mot de passe"
                 type="password"
                 required
+                autoComplete="current-password"
+                placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-5 py-4 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 transition"
               />
-            </div>
 
-            {error && (
-              <div className="text-red-500 text-sm text-center">
-                {error}
-              </div>
-            )}
+              {error && (
+                <div
+                  role="alert"
+                  className="rounded-card border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600"
+                >
+                  {error}
+                </div>
+              )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className={`w-full px-8 py-4 rounded-full text-white font-semibold outline-none border-none hover:opacity-90 transition ${ACCENT_GRADIENT}`}
-            >
-              {loading ? "Connexion..." : "Se connecter"}
-            </button>
+              <Button type="submit" size="lg" loading={loading} className="w-full">
+                {loading ? 'Connexion…' : 'Se connecter'}
+              </Button>
+            </form>
 
-          </form>
-        </div>
-
-      </div>
-    </main>
+            <p className="mt-8 text-center text-sm text-ink/45">
+              Pas encore de compte ?{' '}
+              <Link href="/">
+                <a className="font-medium text-apple hover:underline">
+                  Contacter votre université
+                </a>
+              </Link>
+            </p>
+          </div>
+        </section>
+      </main>
+    </>
   );
 }
-
-

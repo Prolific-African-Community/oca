@@ -1,13 +1,14 @@
 import '../styles/globals.css';
 import type { AppProps } from 'next/app';
-import { StyledEngineProvider } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
+import { ToastProvider } from '../components/overlay/Toast';
+import { CommandProvider } from '../components/overlay/command';
 
 export default function MyApp({ Component, pageProps }: AppProps) {
   return (
-    <StyledEngineProvider injectFirst>
-      <CssBaseline />
-      <Component {...pageProps} />
-    </StyledEngineProvider>
+    <ToastProvider>
+      <CommandProvider>
+        <Component {...pageProps} />
+      </CommandProvider>
+    </ToastProvider>
   );
 }
