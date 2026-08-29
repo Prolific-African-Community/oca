@@ -3,22 +3,34 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "smoke:rbac": "tsx scripts/smoke-rbac.ts",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "uuid": "^13.0.0"
+    "@prisma/client": "6.19.3",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "16.6.1",
+    "next": "15.5.21",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "latest",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^18.19.130",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
     "autoprefixer": "latest",
     "postcss": "latest",
     "prettier": "latest",
     "prettier-plugin-tailwindcss": "latest",
+    "prisma": "6.19.3",
     "tailwindcss": "latest",
-    "typescript": "latest"
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3"
   }
 }

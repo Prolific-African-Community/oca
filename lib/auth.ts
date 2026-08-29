@@ -2,38 +2,117 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import type { NextRouter } from 'next/router';
 
+/**
+ * Lecture de l'utilisateur courant côté client.
+ * La session vit dans un cookie HttpOnly : le navigateur ne peut pas la lire,
+ * l'identité est donc toujours demandée au serveur via /api/auth/me.
+ */
+
+/** Rôles tels qu'exposés par l'API (miroir de l'enum Prisma). */
+export type PlatformRole = 'SUPER_ADMIN' | 'ADMIN' | 'PROFESSOR' | 'STUDENT';
+
+/** Rôles historiques utilisés par les écrans et la navigation. */
 export type Role = 'superadmin' | 'admin' | 'student' | 'teacher';
+
+export interface Membership {
+  institutionId: string;
+  role: PlatformRole;
+  institution: { id: string; name: string; slug: string };
+}
 
 export interface CurrentUser {
   id: string;
   email: string;
-  role: Role | string;
+  firstName?: string | null;
+  lastName?: string | null;
+  platformRole: PlatformRole | null;
+  memberships: Membership[];
+  effectiveRole: PlatformRole | null;
+  /** Équivalent minuscule de effectiveRole, attendu par les écrans existants. */
+  role: Role | null;
+  /** Établissement de rattachement, quand il n'y en a qu'un. */
   universityId?: string;
-  firstName?: string;
-  lastName?: string;
 }
 
-/** Reads the persisted session (client-only). Never redirects. */
+const ROLE_TO_LEGACY: Record<PlatformRole, Role> = {
+  SUPER_ADMIN: 'superadmin',
+  ADMIN: 'admin',
+  PROFESSOR: 'teacher',
+  STUDENT: 'student',
+};
+
+interface MeResponse {
+  user:
+    | (Omit<CurrentUser, 'role' | 'universityId'> & { role?: never })
+    | null;
+}
+
+function normalize(user: MeResponse['user']): CurrentUser | null {
+  if (!user) return null;
+
+  return {
+    ...user,
+    role: user.effectiveRole ? ROLE_TO_LEGACY[user.effectiveRole] : null,
+    universityId: user.memberships[0]?.institutionId,
+  };
+}
+
+/**
+ * Cache module : évite que chaque composant montant (AppShell + page) ne déclenche
+ * son propre appel réseau. Invalidé à la déconnexion.
+ */
+let cachedUser: CurrentUser | null | undefined;
+let inFlight: Promise<CurrentUser | null> | null = null;
+
+async function fetchCurrentUser(): Promise<CurrentUser | null> {
+  if (cachedUser !== undefined) return cachedUser;
+  if (inFlight) return inFlight;
+
+  inFlight = fetch('/api/auth/me', { credentials: 'same-origin' })
+    .then((res) => (res.ok ? (res.json() as Promise<MeResponse>) : { user: null }))
+    .then((data) => normalize(data.user))
+    .catch(() => null)
+    .then((user) => {
+      cachedUser = user;
+      inFlight = null;
+      return user;
+    });
+
+  return inFlight;
+}
+
+/** Vide le cache d'identité (après connexion ou déconnexion). */
+export function invalidateCurrentUser() {
+  cachedUser = undefined;
+  inFlight = null;
+}
+
+/** Lit la session depuis le serveur. Ne redirige jamais. */
 export function useCurrentUser(): { user: CurrentUser | null; ready: boolean } {
-  const [user, setUser] = useState<CurrentUser | null>(null);
-  const [ready, setReady] = useState(false);
+  const [user, setUser] = useState<CurrentUser | null>(cachedUser ?? null);
+  const [ready, setReady] = useState(cachedUser !== undefined);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('user');
-      setUser(stored ? (JSON.parse(stored) as CurrentUser) : null);
-    } catch {
-      setUser(null);
-    }
-    setReady(true);
+    let cancelled = false;
+
+    fetchCurrentUser().then((result) => {
+      if (cancelled) return;
+      setUser(result);
+      setReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return { user, ready };
 }
 
 /**
- * Guards a page to a role, mirroring the previous admin guard behaviour.
- * Pass `null` to skip redirection (read-only personalisation).
+ * Garde une page derrière un rôle. Passer `null` pour ne pas rediriger
+ * (simple personnalisation en lecture).
+ * Garde d'affichage uniquement : la vraie autorisation devra être serveur.
  */
 export function useRequireRole(role: Role | null): { user: CurrentUser | null; ready: boolean } {
   const router = useRouter();
@@ -49,16 +128,17 @@ export function useRequireRole(role: Role | null): { user: CurrentUser | null; r
   return { user, ready };
 }
 
-export function logout(router: NextRouter) {
+export async function logout(router: NextRouter) {
   try {
-    localStorage.removeItem('user');
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
   } catch {
-    /* noop */
+    /* on redirige quand même */
   }
+  invalidateCurrentUser();
   router.push('/login');
 }
 
-/** Human display name from a user, with sensible fallbacks. */
+/** Nom affichable d'un utilisateur, avec replis raisonnables. */
 export function displayName(user: CurrentUser | null): string {
   if (!user) return 'Invité';
   if (user.firstName || user.lastName) {

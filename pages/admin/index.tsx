@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Role } from '@prisma/client';
+import { requireRoleSSR } from '../../lib/pageGuard';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell } from '../../components/app/AppShell';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
@@ -9,6 +11,10 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Reveal } from '../../components/anim/Reveal';
 import { Drawer } from '../../components/overlay/Drawer';
+import { StructureDrawer } from '../../components/admin/StructureDrawer';
+import { AssignmentDrawer } from '../../components/admin/AssignmentDrawer';
+import { AuditFeed } from '../../components/admin/AuditFeed';
+import type { Assignment, Teacher } from '../../components/admin/AssignmentDrawer';
 import { useToast } from '../../components/overlay/Toast';
 import { useRegisterCommands } from '../../components/overlay/command';
 import { useCurrentUser } from '../../lib/auth';
@@ -20,30 +26,35 @@ import {
   CheckIcon,
   ChevronRightIcon,
   CapIcon,
-  MessageIcon,
 } from '../../components/ui/icons';
 
-const FACULTIES = ['Économie', 'Droit', 'Informatique'];
-const PROGRAMS = ['Licence', 'Master'];
-const SEMESTERS = ['Semestre 1', 'Semestre 2'];
-const COURSES = ['Finance d’entreprise', 'Comptabilité générale', 'Microéconomie', 'Statistiques appliquées'];
+/** Structure académique réelle de l'établissement, servie par /api/admin/structure. */
+interface Structure {
+  institution: { id: string; name: string; slug: string } | null;
+  faculties: { id: string; name: string; code: string; departments: { id: string; name: string }[] }[];
+  cycles: { id: string; name: string; code: string; level: string }[];
+  programs: { id: string; name: string; code: string; facultyId: string; status: string }[];
+  academicYears: { id: string; name: string; isCurrent: boolean }[];
+  semesters: {
+    id: string;
+    name: string;
+    number: number;
+    programId: string;
+    academicYearId: string;
+    courseCount: number;
+  }[];
+  courses: { id: string; title: string; code: string; credits: number; semesterId: string }[];
+}
 
-const attention = [
-  { icon: ClipboardIcon, label: '2 dossiers à valider', hint: 'Inscriptions en attente', tone: 'warning' as const },
-  { icon: LayersIcon, label: '1 programme incomplet', hint: 'Licence Droit — 2 cours manquants', tone: 'brand' as const },
-  { icon: MessageIcon, label: '3 messages étudiants', hint: 'Sans réponse depuis 2 jours', tone: 'neutral' as const },
-];
-
-const validations = [
-  { name: 'Ibrahim Touré', detail: 'Master Économie · dossier complet' },
-  { name: 'Fatou Ndiaye', detail: 'Licence Droit · pièce manquante' },
-];
-
-const programs = [
-  { name: 'Licence Économie', complete: 100 },
-  { name: 'Master Data', complete: 80 },
-  { name: 'Licence Droit', complete: 60 },
-];
+const EMPTY_STRUCTURE: Structure = {
+  institution: null,
+  faculties: [],
+  cycles: [],
+  programs: [],
+  academicYears: [],
+  semesters: [],
+  courses: [],
+};
 
 function generatePassword() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -54,7 +65,12 @@ export default function AdminWorkspace() {
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const [students, setStudents] = useState<any[]>([]);
+  const [structure, setStructure] = useState<Structure>(EMPTY_STRUCTURE);
   const [drawer, setDrawer] = useState(false);
+  const [structureDrawer, setStructureDrawer] = useState(false);
+  const [assignmentDrawer, setAssignmentDrawer] = useState(false);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
 
   const fetchStudents = () => {
     fetch('/api/students/list')
@@ -63,6 +79,89 @@ export default function AdminWorkspace() {
       .catch(() => setStudents([]));
   };
   useEffect(fetchStudents, []);
+
+  const fetchStructure = useCallback(() => {
+    return fetch('/api/admin/structure')
+      .then((r) => (r.ok ? r.json() : EMPTY_STRUCTURE))
+      .then((d) => setStructure({ ...EMPTY_STRUCTURE, ...d }))
+      .catch(() => setStructure(EMPTY_STRUCTURE));
+  }, []);
+
+  const fetchTeaching = useCallback(() => {
+    fetch('/api/admin/teachers')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setTeachers(Array.isArray(d) ? d : []))
+      .catch(() => setTeachers([]));
+
+    fetch('/api/admin/assignments')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setAssignments(Array.isArray(d) ? d : []))
+      .catch(() => setAssignments([]));
+  }, []);
+
+  useEffect(() => {
+    fetchStructure();
+    fetchTeaching();
+  }, [fetchStructure, fetchTeaching]);
+
+  // Bandeau d'état réel : ce qui manque encore pour que l'établissement soit utilisable.
+  const readiness = useMemo(() => {
+    const currentYear = structure.academicYears.find((y) => y.isCurrent);
+    const semestersThisYear = currentYear
+      ? structure.semesters.filter((sem) => sem.academicYearId === currentYear.id)
+      : [];
+
+    const items: { icon: any; label: string; hint: string; tone: 'warning' | 'brand' | 'success' }[] = [];
+
+    if (structure.faculties.length === 0) {
+      items.push({ icon: LayersIcon, label: 'Aucune faculté', hint: 'Commencez par créer une faculté', tone: 'warning' });
+    }
+    if (structure.programs.length === 0) {
+      items.push({ icon: LayersIcon, label: 'Aucun programme', hint: 'Un cycle puis un programme sont nécessaires', tone: 'warning' });
+    }
+    if (!currentYear) {
+      items.push({ icon: ClipboardIcon, label: 'Aucune année en cours', hint: 'Déclarez l’année universitaire', tone: 'warning' });
+    } else if (semestersThisYear.length === 0) {
+      items.push({ icon: ClipboardIcon, label: 'Aucun semestre', hint: `Année ${currentYear.name} sans semestre`, tone: 'warning' });
+    }
+    if (structure.courses.length === 0 && structure.semesters.length > 0) {
+      items.push({ icon: ClipboardIcon, label: 'Aucun cours', hint: 'Les maquettes sont vides', tone: 'brand' });
+    }
+
+    if (structure.courses.length > 0 && assignments.length === 0) {
+      items.push({
+        icon: UsersIcon,
+        label: 'Aucun enseignant affecté',
+        hint: `${structure.courses.length} cours sans enseignant`,
+        tone: 'brand',
+      });
+    }
+
+    if (items.length === 0) {
+      items.push({
+        icon: CheckIcon,
+        label: 'Structure opérationnelle',
+        hint: `${structure.programs.length} programme(s) · ${structure.courses.length} cours · ${assignments.length} affectation(s)`,
+        tone: 'success',
+      });
+    }
+
+    return items;
+  }, [structure, assignments]);
+
+  // Avancement d'un programme = part de ses semestres qui contiennent au moins un cours.
+  const programProgress = useMemo(
+    () =>
+      structure.programs.map((prog) => {
+        const semesters = structure.semesters.filter((sem) => sem.programId === prog.id);
+        const filled = semesters.filter((sem) => sem.courseCount > 0).length;
+        return {
+          name: prog.name,
+          complete: semesters.length === 0 ? 0 : Math.round((filled / semesters.length) * 100),
+        };
+      }),
+    [structure]
+  );
 
   useRegisterCommands(
     'admin:actions',
@@ -76,11 +175,20 @@ export default function AdminWorkspace() {
         perform: () => setDrawer(true),
       },
       {
-        id: 'admin:new-program',
-        label: 'Créer un programme',
+        id: 'admin:assignments',
+        label: 'Affecter les enseignants',
+        hint: 'Enseignant ↔ cours',
+        group: 'Actions',
+        icon: <UsersIcon size={17} />,
+        perform: () => setAssignmentDrawer(true),
+      },
+      {
+        id: 'admin:structure',
+        label: 'Structure académique',
+        hint: 'Facultés, programmes, semestres, cours',
         group: 'Actions',
         icon: <LayersIcon size={17} />,
-        perform: () => toast({ title: 'Bientôt disponible', description: 'La création de programme arrive.', tone: 'info' }),
+        perform: () => setStructureDrawer(true),
       },
     ],
     []
@@ -103,10 +211,12 @@ export default function AdminWorkspace() {
       {/* ATTENTION BAND */}
       <Reveal>
         <div className="grid gap-3 sm:grid-cols-3">
-          {attention.map((a) => (
+          {readiness.map((a) => (
             <button
               key={a.label}
-              onClick={() => toast({ title: a.label, description: a.hint, tone: 'info' })}
+              onClick={() =>
+                a.label === 'Aucun enseignant affecté' ? setAssignmentDrawer(true) : setStructureDrawer(true)
+              }
               className="group flex items-center gap-3 rounded-hero border border-hairline bg-white p-4 text-left shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lift"
             >
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-cloud text-ink/60 transition-colors group-hover:bg-oca-tint group-hover:text-oca">
@@ -127,24 +237,12 @@ export default function AdminWorkspace() {
         <div className="space-y-5 lg:col-span-2">
           <Reveal delay={60}>
             <Card>
-              <CardHeader title="À valider aujourd’hui" action={<Badge tone="warning">{validations.length}</Badge>} />
-              <ul className="space-y-2">
-                {validations.map((v) => (
-                  <li key={v.name} className="flex items-center gap-3 rounded-2xl p-2.5 transition-colors hover:bg-cloud">
-                    <Avatar name={v.name} size="md" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[15px] font-medium text-ink">{v.name}</p>
-                      <p className="truncate text-sm text-ink/45">{v.detail}</p>
-                    </div>
-                    <button
-                      onClick={() => toast({ title: 'Dossier validé', description: v.name, tone: 'success' })}
-                      className="flex h-9 items-center gap-1.5 rounded-full bg-oca-tint px-3.5 text-sm font-medium text-oca transition-colors hover:bg-oca hover:text-white"
-                    >
-                      <CheckIcon size={16} /> Valider
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <CardHeader title="À valider aujourd’hui" />
+              <EmptyState
+                icon={<ClipboardIcon size={22} />}
+                title="Aucun dossier en attente"
+                description="La validation des inscriptions arrivera dans une prochaine version."
+              />
             </Card>
           </Reveal>
 
@@ -181,8 +279,15 @@ export default function AdminWorkspace() {
                         <p className="truncate text-sm text-ink/45">{s.email}</p>
                       </div>
                       <div className="hidden items-center gap-2 sm:flex">
-                        <Badge tone="brand">{s.faculty}</Badge>
-                        <Badge tone="neutral">{s.program}</Badge>
+                        {s.enrollmentStatus ? (
+                          <>
+                            <Badge tone="brand">{s.faculty}</Badge>
+                            <Badge tone="neutral">{s.program}</Badge>
+                            {s.semester && <Badge tone="neutral">{s.semester}</Badge>}
+                          </>
+                        ) : (
+                          <Badge tone="warning">Sans inscription</Badge>
+                        )}
                       </div>
                     </li>
                   ))}
@@ -199,17 +304,27 @@ export default function AdminWorkspace() {
               <CardHeader title="Actions rapides" />
               <div className="space-y-2">
                 <QuickAction icon={<PlusIcon size={18} />} label="Inscrire un étudiant" hint="⌘K" onClick={() => setDrawer(true)} primary />
-                <QuickAction icon={<LayersIcon size={18} />} label="Créer un programme" onClick={() => toast({ title: 'Bientôt disponible', tone: 'info' })} />
-                <QuickAction icon={<UsersIcon size={18} />} label="Importer une cohorte" onClick={() => toast({ title: 'Bientôt disponible', tone: 'info' })} />
+                <QuickAction icon={<LayersIcon size={18} />} label="Structure académique" onClick={() => setStructureDrawer(true)} />
+                <QuickAction icon={<UsersIcon size={18} />} label="Affecter les enseignants" onClick={() => setAssignmentDrawer(true)} />
               </div>
+            </Card>
+          </Reveal>
+
+          <Reveal delay={110}>
+            <Card>
+              <CardHeader title="Activité récente" />
+              <AuditFeed limit={6} />
             </Card>
           </Reveal>
 
           <Reveal delay={130}>
             <Card>
               <CardHeader title="Programmes" />
+              {programProgress.length === 0 ? (
+                <p className="text-sm text-ink/45">Aucun programme configuré pour le moment.</p>
+              ) : (
               <ul className="space-y-4">
-                {programs.map((p) => (
+                {programProgress.map((p) => (
                   <li key={p.name}>
                     <div className="mb-1.5 flex items-center justify-between text-sm">
                       <span className="font-medium text-ink">{p.name}</span>
@@ -221,15 +336,44 @@ export default function AdminWorkspace() {
                   </li>
                 ))}
               </ul>
+              )}
             </Card>
           </Reveal>
         </div>
       </div>
 
+      <AssignmentDrawer
+        open={assignmentDrawer}
+        onClose={() => setAssignmentDrawer(false)}
+        structure={structure}
+        teachers={teachers}
+        assignments={assignments}
+        onChanged={(message) => {
+          fetchTeaching();
+          toast({ title: 'Affectation enregistrée', description: message, tone: 'success' });
+        }}
+        onError={(message) => toast({ title: 'Action impossible', description: message, tone: 'error' })}
+      />
+
+      <StructureDrawer
+        open={structureDrawer}
+        onClose={() => setStructureDrawer(false)}
+        structure={structure}
+        onCreated={(entity, created) => {
+          fetchStructure();
+          toast({
+            title: 'Élément créé',
+            description: created?.name ?? created?.title ?? entity,
+            tone: 'success',
+          });
+        }}
+        onError={(message) => toast({ title: 'Création impossible', description: message, tone: 'error' })}
+      />
+
       <CreateStudentDrawer
         open={drawer}
         onClose={() => setDrawer(false)}
-        universityId={user?.universityId}
+        structure={structure}
         onCreated={(s) => {
           setStudents((prev) => [...prev, s]);
           toast({ title: 'Étudiant inscrit', description: `${s.firstName} ${s.lastName}`, tone: 'success' });
@@ -273,13 +417,13 @@ function QuickAction({
 function CreateStudentDrawer({
   open,
   onClose,
-  universityId,
+  structure,
   onCreated,
   onError,
 }: {
   open: boolean;
   onClose: () => void;
-  universityId?: string;
+  structure: Structure;
   onCreated: (s: any) => void;
   onError: () => void;
 }) {
@@ -287,21 +431,71 @@ function CreateStudentDrawer({
     firstName: '',
     lastName: '',
     email: '',
-    faculty: FACULTIES[0],
-    program: PROGRAMS[0],
-    semester: SEMESTERS[0],
-    courses: [] as string[],
+    facultyId: '',
+    programId: '',
+    semesterId: '',
     password: generatePassword(),
   };
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(false);
 
   const set = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
-  const toggleCourse = (c: string) =>
-    setForm((p) => ({ ...p, courses: p.courses.includes(c) ? p.courses.filter((x) => x !== c) : [...p.courses, c] }));
+
+  // Année universitaire courante : c'est elle qui borne les semestres proposés.
+  const currentYear =
+    structure.academicYears.find((y) => y.isCurrent) ?? structure.academicYears[0] ?? null;
+
+  const facultyOptions = structure.faculties.map((f) => ({ value: f.id, label: f.name }));
+
+  const programOptions = structure.programs
+    .filter((prog) => !form.facultyId || prog.facultyId === form.facultyId)
+    .map((prog) => ({ value: prog.id, label: prog.name }));
+
+  const semesterOptions = structure.semesters
+    .filter(
+      (sem) =>
+        sem.programId === form.programId &&
+        (!currentYear || sem.academicYearId === currentYear.id)
+    )
+    .map((sem) => ({ value: sem.id, label: sem.name }));
+
+  const semesterCourses = structure.courses.filter((c) => c.semesterId === form.semesterId);
+
+  // Sélection par défaut, et resynchronisation dès qu'un choix amont rend le choix aval invalide.
+  useEffect(() => {
+    if (!open) return;
+
+    setForm((prev) => {
+      const facultyId =
+        prev.facultyId && structure.faculties.some((f) => f.id === prev.facultyId)
+          ? prev.facultyId
+          : structure.faculties[0]?.id ?? '';
+
+      const programs = structure.programs.filter((prog) => !facultyId || prog.facultyId === facultyId);
+      const programId =
+        prev.programId && programs.some((prog) => prog.id === prev.programId)
+          ? prev.programId
+          : programs[0]?.id ?? '';
+
+      const semesters = structure.semesters.filter(
+        (sem) => sem.programId === programId && (!currentYear || sem.academicYearId === currentYear.id)
+      );
+      const semesterId =
+        prev.semesterId && semesters.some((sem) => sem.id === prev.semesterId)
+          ? prev.semesterId
+          : semesters[0]?.id ?? '';
+
+      if (facultyId === prev.facultyId && programId === prev.programId && semesterId === prev.semesterId) {
+        return prev;
+      }
+      return { ...prev, facultyId, programId, semesterId };
+    });
+  }, [open, structure, form.facultyId, form.programId, currentYear]);
+
+  const canSubmit = Boolean(form.programId && form.semesterId);
 
   const submit = async () => {
-    if (!form.firstName || !form.lastName || !form.email) {
+    if (!form.firstName || !form.lastName || !form.email || !canSubmit) {
       onError();
       return;
     }
@@ -310,11 +504,18 @@ function CreateStudentDrawer({
       const res = await fetch('/api/students/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, universityId }),
+        body: JSON.stringify({
+          firstName: form.firstName,
+          lastName: form.lastName,
+          email: form.email,
+          password: form.password,
+          programId: form.programId,
+          semesterId: form.semesterId,
+        }),
       });
       if (!res.ok) throw new Error();
-      const created = await res.json().catch(() => ({ ...form, id: Date.now().toString() }));
-      onCreated(created && created.id ? created : { ...form, id: Date.now().toString() });
+      const created = await res.json();
+      onCreated(created);
       setForm({ ...empty, password: generatePassword() });
       onClose();
     } catch {
@@ -336,7 +537,7 @@ function CreateStudentDrawer({
           <button onClick={onClose} className={buttonClasses('secondary', 'md')}>
             Annuler
           </button>
-          <Button onClick={submit} loading={loading}>
+          <Button onClick={submit} loading={loading} disabled={!canSubmit}>
             Créer le compte
           </Button>
         </div>
@@ -356,34 +557,38 @@ function CreateStudentDrawer({
         />
 
         <div className="grid grid-cols-3 gap-3">
-          <SelectField label="Faculté" value={form.faculty} options={FACULTIES} onChange={(v) => set('faculty', v)} />
-          <SelectField label="Programme" value={form.program} options={PROGRAMS} onChange={(v) => set('program', v)} />
-          <SelectField label="Semestre" value={form.semester} options={SEMESTERS} onChange={(v) => set('semester', v)} />
+          <SelectField label="Faculté" value={form.facultyId} options={facultyOptions} onChange={(v) => set('facultyId', v)} />
+          <SelectField label="Programme" value={form.programId} options={programOptions} onChange={(v) => set('programId', v)} />
+          <SelectField label="Semestre" value={form.semesterId} options={semesterOptions} onChange={(v) => set('semesterId', v)} />
         </div>
 
+        {!canSubmit && (
+          <p className="text-sm text-amber-600">
+            Aucun programme ou semestre n’est configuré pour l’année en cours : l’inscription est
+            impossible tant que la maquette n’existe pas.
+          </p>
+        )}
+
         <div>
-          <p className="mb-2 text-sm font-medium text-ink/70">Cours</p>
-          <div className="grid grid-cols-1 gap-2">
-            {COURSES.map((c) => {
-              const on = form.courses.includes(c);
-              return (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => toggleCourse(c)}
-                  className={
-                    'flex items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors ' +
-                    (on ? 'border-oca-tint bg-oca-tint text-oca' : 'border-hairline bg-white text-ink/70 hover:bg-cloud')
-                  }
+          <p className="mb-2 text-sm font-medium text-ink/70">Cours du semestre</p>
+          {semesterCourses.length === 0 ? (
+            <p className="text-sm text-ink/45">Aucun cours n’est encore rattaché à ce semestre.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-2">
+              {semesterCourses.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-3 rounded-xl border border-hairline bg-white px-3.5 py-2.5 text-left text-sm text-ink/70"
                 >
-                  <span className={'grid h-5 w-5 place-items-center rounded-md border ' + (on ? 'border-oca bg-oca text-white' : 'border-hairline')}>
-                    {on && <CheckIcon size={13} />}
+                  <span className="grid h-5 w-5 place-items-center rounded-md border border-oca bg-oca text-white">
+                    <CheckIcon size={13} />
                   </span>
-                  {c}
-                </button>
-              );
-            })}
-          </div>
+                  <span className="flex-1">{c.title}</span>
+                  <span className="text-ink/40">{c.credits} cr.</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-hairline bg-cloud/60 p-4">
@@ -414,7 +619,7 @@ function SelectField({
 }: {
   label: string;
   value: string;
-  options: string[];
+  options: { value: string; label: string }[];
   onChange: (v: string) => void;
 }) {
   return (
@@ -425,10 +630,16 @@ function SelectField({
         onChange={(e) => onChange(e.target.value)}
         className="h-12 w-full rounded-card border border-hairline bg-white px-3 text-[15px] text-ink transition-colors hover:border-ink/20 focus:border-apple focus:outline-none focus:ring-4 focus:ring-apple/15"
       >
+        {options.length === 0 && <option value="">—</option>}
         {options.map((o) => (
-          <option key={o}>{o}</option>
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
         ))}
       </select>
     </label>
   );
 }
+
+// Protection côté serveur : la page n'est rendue que pour un rôle autorisé.
+export const getServerSideProps = requireRoleSSR([Role.ADMIN]);

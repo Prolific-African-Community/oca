@@ -1,90 +1,145 @@
-import { AppShell } from '../../components/app/AppShell';
-import { Card, CardHeader } from '../../components/ui/Card';
-import { Badge } from '../../components/ui/Badge';
-import { ProgressRing } from '../../components/ui/ProgressRing';
-import { ProgressBar } from '../../components/ui/ProgressBar';
-import { Reveal } from '../../components/anim/Reveal';
+import { Role } from '@prisma/client'
+import { requireRoleSSR } from '../../lib/pageGuard'
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { AppShell } from '../../components/app/AppShell'
+import { Card, CardHeader } from '../../components/ui/Card'
+import { Badge } from '../../components/ui/Badge'
+import { ProgressBar } from '../../components/ui/ProgressBar'
+import { EmptyState } from '../../components/ui/EmptyState'
+import { Skeleton } from '../../components/ui/Skeleton'
+import { Reveal } from '../../components/anim/Reveal'
+import {
+  AwardIcon,
+  BookIcon,
+  ChevronRightIcon,
+} from '../../components/ui/icons'
+import type { StudentSummary } from '../../lib/studentSummary'
 
-const grades = [
-  { course: 'Finance d’entreprise', grade: 15.5, ects: 6, status: 'Validé' as const },
-  { course: 'Comptabilité générale', grade: 16.0, ects: 6, status: 'Validé' as const },
-  { course: 'Microéconomie', grade: 13.0, ects: 4, status: 'Validé' as const },
-  { course: 'Data Analytics', grade: null, ects: 6, status: 'En cours' as const },
-  { course: 'Droit des affaires', grade: 12.5, ects: 5, status: 'Validé' as const },
-  { course: 'Statistiques appliquées', grade: null, ects: 5, status: 'En cours' as const },
-];
-
+/**
+ * Notes & crédits.
+ *
+ * Aucune note n'existe en base : il n'y a ni schéma d'évaluation, ni délibération.
+ * La page l'annonce clairement plutôt que d'afficher un relevé fictif, et se
+ * limite à rappeler l'avancement de lecture — qui n'est **pas** une validation
+ * académique, ce que le texte précise explicitement.
+ */
 export default function StudentGrades() {
+  const [summary, setSummary] = useState<StudentSummary | null>(null)
+
+  useEffect(() => {
+    fetch('/api/student/summary')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setSummary(d))
+      .catch(() => setSummary(null))
+  }, [])
+
   return (
-    <AppShell role="student" title="Notes & crédits" subtitle="Relevé académique · Licence S3">
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Reveal>
-          <Card className="flex items-center gap-5">
-            <ProgressRing
-              value={71}
-              size={96}
-              stroke={9}
-              label={<span className="text-lg font-medium text-ink">14,2</span>}
-            />
-            <div>
-              <p className="text-sm text-ink/45">Moyenne générale</p>
-              <p className="text-2xl font-medium tracking-tightest text-ink">14,2<span className="text-ink/30"> / 20</span></p>
-              <Badge tone="success" className="mt-2">Mention Bien</Badge>
-            </div>
-          </Card>
-        </Reveal>
-
-        <Reveal delay={70}>
-          <Card>
-            <CardHeader title="Crédits ECTS" />
-            <p className="text-2xl font-medium tracking-tightest text-ink">72<span className="text-ink/30"> / 180</span></p>
-            <ProgressBar value={40} className="mt-3" />
-            <p className="mt-2 text-sm text-ink/45">40 % du diplôme validé · 108 crédits restants</p>
-          </Card>
-        </Reveal>
-
-        <Reveal delay={140}>
-          <Card>
-            <CardHeader title="Ce semestre" />
-            <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-medium tracking-tightest text-ink">17</p>
-              <p className="text-sm text-ink/45">/ 27 crédits acquis</p>
-            </div>
-            <ProgressBar value={63} className="mt-3" />
-            <p className="mt-2 text-sm text-ink/45">2 cours en cours de validation</p>
-          </Card>
-        </Reveal>
-      </div>
-
-      <Reveal delay={80} className="mt-5 block">
-        <Card padding="none">
-          <div className="px-6 pt-6 sm:px-8">
-            <CardHeader title="Détail par cours" />
-          </div>
-          <ul className="divide-y divide-hairline">
-            {grades.map((g) => (
-              <li key={g.course} className="flex items-center gap-4 px-6 py-4 sm:px-8">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-medium text-ink">{g.course}</p>
-                  <p className="text-sm text-ink/45">{g.ects} crédits ECTS</p>
-                </div>
-                {g.status === 'Validé' ? (
-                  <Badge tone="success">Validé</Badge>
-                ) : (
-                  <Badge tone="warning">En cours</Badge>
-                )}
-                <div className="w-16 text-right">
-                  {g.grade !== null ? (
-                    <span className="text-[15px] font-medium tabular-nums text-ink">{g.grade.toFixed(1)}</span>
-                  ) : (
-                    <span className="text-sm text-ink/30">—</span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+    <AppShell
+      role="student"
+      requiredRole="student"
+      title="Notes & crédits"
+      subtitle={
+        summary?.semester
+          ? `${summary.program?.name ?? ''} · ${summary.semester.name} ${
+              summary.semester.academicYear
+            }`
+          : undefined
+      }
+    >
+      <Reveal>
+        <Card>
+          <EmptyState
+            icon={<AwardIcon size={22} />}
+            title="Aucune note pour le moment"
+            description="Les évaluations ne sont pas encore ouvertes sur OCA. Vos notes, vos crédits validés et vos moyennes apparaîtront ici dès que votre établissement les publiera."
+          />
         </Card>
       </Reveal>
+
+      {summary === null ? (
+        <div className="mt-5">
+          <Skeleton className="h-40 w-full" />
+        </div>
+      ) : !summary.enrolled ? null : (
+        <Reveal delay={80} className="mt-5 block">
+          <Card>
+            <CardHeader
+              title="Votre avancement"
+              action={<Badge tone="neutral">Suivi de lecture</Badge>}
+            />
+            <p className="text-ink/45 mb-5 text-sm">
+              Indicatif : cet avancement reflète les leçons que vous avez
+              marquées comme terminées. Il ne constitue en aucun cas une
+              validation académique.
+            </p>
+
+            <div className="grid gap-5 sm:grid-cols-3">
+              <div>
+                <p className="text-ink/45 text-sm">Cours suivis</p>
+                <p className="text-2xl font-medium tracking-tightest text-ink">
+                  {summary.courseCount}
+                </p>
+              </div>
+              <div>
+                <p className="text-ink/45 text-sm">Leçons terminées</p>
+                <p className="text-2xl font-medium tracking-tightest text-ink">
+                  {summary.completedLessons}
+                  <span className="text-ink/30"> / {summary.lessonCount}</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-ink/45 text-sm">
+                  Crédits inscrits ce semestre
+                </p>
+                <p className="text-2xl font-medium tracking-tightest text-ink">
+                  {summary.creditsEnrolled}
+                </p>
+              </div>
+            </div>
+
+            {summary.lessonCount > 0 && (
+              <div className="mt-5">
+                <ProgressBar value={summary.progress} />
+              </div>
+            )}
+
+            {summary.courses.length > 0 && (
+              <ul className="mt-6 divide-y divide-hairline border-t border-hairline pt-2">
+                {summary.courses.map((c) => (
+                  <li key={c.id} className="group">
+                    <Link
+                      href={`/student/course/${c.id}`}
+                      className="flex items-center gap-4 py-3.5 no-underline"
+                    >
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cloud text-ink/50 transition-colors group-hover:bg-oca-tint group-hover:text-oca">
+                        <BookIcon size={18} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[15px] font-medium text-ink">
+                          {c.title}
+                        </p>
+                        <p className="text-ink/45 truncate text-sm">
+                          {c.code} · {c.credits} crédits
+                        </p>
+                      </div>
+                      <span className="text-[13px] tabular-nums text-ink/40">
+                        {c.lessonCount > 0
+                          ? `${c.completedLessons}/${c.lessonCount} · ${c.progress}%`
+                          : 'Contenu à venir'}
+                      </span>
+                      <ChevronRightIcon size={16} className="text-ink/25" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </Reveal>
+      )}
     </AppShell>
-  );
+  )
 }
+
+// Protection côté serveur : la page n'est rendue que pour un rôle autorisé.
+export const getServerSideProps = requireRoleSSR([Role.STUDENT])

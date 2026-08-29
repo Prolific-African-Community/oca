@@ -1,57 +1,60 @@
-import { useState } from 'react';
-import { useRouter } from 'next/router';
-import Head from 'next/head';
-import Link from 'next/link';
-import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
-import { Wordmark } from '../components/brand/Wordmark';
-import { AuthScene } from '../components/illustrations/AuthScene';
-import { Aurora, GridField, Orbits, NoiseOverlay } from '../components/illustrations/Backdrop';
+import { useState } from 'react'
+import { useRouter } from 'next/router'
+import Head from 'next/head'
+import Link from 'next/link'
+import { Button } from '../components/ui/Button'
+import { Input } from '../components/ui/Input'
+import { Wordmark } from '../components/brand/Wordmark'
+import { invalidateCurrentUser } from '../lib/auth'
+import { AuthScene } from '../components/illustrations/AuthScene'
+import {
+  Aurora,
+  GridField,
+  Orbits,
+  NoiseOverlay,
+} from '../components/illustrations/Backdrop'
 
 export default function LoginPage() {
-  const router = useRouter();
+  const router = useRouter()
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+    e.preventDefault()
+    setError('')
+    setLoading(true)
 
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
-      });
+      })
 
-      const user = await res.json();
+      const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(user.message || 'Erreur de connexion');
+        throw new Error(data.message || 'Erreur de connexion')
       }
 
-      localStorage.setItem('user', JSON.stringify(user));
+      // La session vit dans un cookie HttpOnly posé par le serveur :
+      // rien n'est stocké côté navigateur.
+      invalidateCurrentUser()
 
-      // Redirection selon rôle
-      if (user.role === 'superadmin') {
-        router.push('/superadmin');
-      } else if (user.role === 'admin') {
-        router.push('/admin');
-      } else if (user.role === 'student') {
-        router.push('/student');
-      } else {
-        throw new Error('Rôle inconnu');
+      if (!data.redirectTo) {
+        throw new Error("Aucun rôle n'est associé à ce compte")
       }
+
+      router.push(data.redirectTo)
     } catch (err: any) {
-      setError(err.message || 'Erreur serveur');
+      setError(err.message || 'Erreur serveur')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <>
@@ -108,7 +111,7 @@ export default function LoginPage() {
             <h1 className="text-[28px] font-medium tracking-tightest text-ink">
               Bon retour
             </h1>
-            <p className="mt-2 text-[15px] text-ink/55">
+            <p className="text-ink/55 mt-2 text-[15px]">
               Connectez-vous pour accéder à votre espace.
             </p>
 
@@ -142,22 +145,25 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <Button type="submit" size="lg" loading={loading} className="w-full">
+              <Button
+                type="submit"
+                size="lg"
+                loading={loading}
+                className="w-full"
+              >
                 {loading ? 'Connexion…' : 'Se connecter'}
               </Button>
             </form>
 
-            <p className="mt-8 text-center text-sm text-ink/45">
+            <p className="text-ink/45 mt-8 text-center text-sm">
               Pas encore de compte ?{' '}
-              <Link href="/">
-                <a className="font-medium text-apple hover:underline">
-                  Contacter votre université
-                </a>
+              <Link href="/" className="font-medium text-apple hover:underline">
+                Contacter votre université
               </Link>
             </p>
           </div>
         </section>
       </main>
     </>
-  );
+  )
 }

@@ -34,6 +34,13 @@ export const roleConfig: Record<string, RoleMeta> = {
       { label: 'Sessions live', short: 'Live', href: '/student/live', icon: LiveIcon },
     ],
   },
+  teacher: {
+    label: 'Enseignant',
+    home: '/teacher',
+    nav: [
+      { label: 'Mes enseignements', short: 'Cours', href: '/teacher', icon: BookIcon },
+    ],
+  },
   admin: {
     label: 'Administration',
     home: '/admin',

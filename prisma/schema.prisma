@@ -1,0 +1,799 @@
+// OCA — schéma.
+// RUN 1 : identité, établissements, appartenance.
+// RUN 2 : structure académique de base (campus, facultés, départements,
+//         cycles, programmes, années universitaires, semestres).
+// RUN 3 : domaine pédagogique (cours, affectations enseignantes, inscriptions,
+//         modules, leçons, compétences, acquis d'apprentissage, prérequis).
+// RUN 11 : suivi de progression des étudiants (consultation et achèvement
+//          des leçons).
+// RUN 14 : journal d'audit des actions structurantes.
+// RUN 15 : quiz d'entraînement (questions, tentatives, réponses).
+//          Ce sont des retours pédagogiques, PAS des notes officielles :
+//          aucune délibération, aucun crédit, aucune validation académique.
+// Hors périmètre : examens et notes officielles. Les sorties IA existantes
+// restent consultatives ou à l'état de brouillon jusqu'à validation enseignante.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Connexion directe (non poolée) : requise par Prisma Migrate sur Neon.
+  directUrl = env("DIRECT_URL")
+}
+
+/// Rôles de la plateforme.
+/// SUPER_ADMIN est un rôle *plateforme* (porté par User.platformRole).
+/// ADMIN / PROFESSOR / STUDENT sont des rôles *périmétrés* par établissement
+/// (portés par InstitutionUser.role).
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  PROFESSOR
+  STUDENT
+}
+
+enum InstitutionStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// Identité unique d'une personne sur la plateforme, indépendante de tout établissement.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  /// Renseigné uniquement pour les administrateurs de la plateforme (SUPER_ADMIN).
+  platformRole Role?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships       InstitutionUser[]
+  courseAssignments CourseAssignment[]
+  enrollments       Enrollment[]
+  lessonProgress    LessonProgress[]
+  auditLogs         AuditLog[]
+  quizAttempts      QuizAttempt[]
+  aiGenerations     AIGeneration[]
+
+  @@index([platformRole])
+}
+
+/// Établissement (tenant).
+model Institution {
+  id        String            @id @default(cuid())
+  name      String
+  /// Identifiant court et stable, utilisable en URL.
+  slug      String            @unique
+  country   String?
+  status    InstitutionStatus @default(ACTIVE)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  members       InstitutionUser[]
+  campuses      Campus[]
+  faculties     Faculty[]
+  cycles        Cycle[]
+  programs      Program[]
+  academicYears AcademicYear[]
+  courses       Course[]
+  enrollments   Enrollment[]
+  competencies  Competency[]
+  prerequisites Prerequisite[]
+  auditLogs     AuditLog[]
+  quizzes       Quiz[]
+  aiGenerations AIGeneration[]
+}
+
+/// Appartenance d'un utilisateur à un établissement, avec son rôle dans ce périmètre.
+/// Un même utilisateur peut appartenir à plusieurs établissements avec des rôles différents.
+model InstitutionUser {
+  id            String   @id @default(cuid())
+  userId        String
+  institutionId String
+  role          Role
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, institutionId, role])
+  @@index([institutionId, role])
+  @@index([userId])
+}
+
+/**
+ * =========================================================================
+ * Structure académique
+ * =========================================================================
+ */
+
+/// Statut commun aux objets académiques.
+/// DRAFT   : en préparation, non visible des étudiants.
+/// ACTIVE  : en vigueur.
+/// CLOSED  : terminé (année ou semestre échu) mais conservé tel quel.
+/// ARCHIVED: retiré de l'offre courante, conservé pour l'historique.
+enum AcademicStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+/// Niveau LMD d'un cycle. Fixé par le cadre CAMES, sert de socle aux règles
+/// métier ; le libellé et la durée réels restent portés par le modèle Cycle.
+enum CycleLevel {
+  LICENCE
+  MASTER
+  DOCTORAT
+}
+
+/// Site physique d'un établissement.
+model Campus {
+  id            String   @id @default(cuid())
+  institutionId String
+  name          String
+  /// Code court, unique au sein de l'établissement.
+  code          String
+  city          String?
+  isMain        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  faculties   Faculty[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId])
+}
+
+/// Faculté / UFR / école. Rattachée à l'établissement, optionnellement à un campus.
+model Faculty {
+  id            String   @id @default(cuid())
+  institutionId String
+  campusId      String?
+  name          String
+  code          String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  institution Institution  @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  campus      Campus?      @relation(fields: [campusId], references: [id], onDelete: SetNull)
+  departments Department[]
+  programs    Program[]
+  courses     Course[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId])
+  @@index([campusId])
+}
+
+/// Département rattaché à une faculté.
+model Department {
+  id        String   @id @default(cuid())
+  facultyId String
+  name      String
+  code      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  faculty  Faculty   @relation(fields: [facultyId], references: [id], onDelete: Cascade)
+  programs Program[]
+  courses  Course[]
+
+  @@unique([facultyId, code])
+  @@index([facultyId])
+}
+
+/// Cycle LMD tel que déclaré par l'établissement (Licence, Master, Doctorat).
+/// Modélisé en table plutôt qu'en simple enum : le libellé, la durée et les
+/// crédits requis varient d'un établissement à l'autre.
+model Cycle {
+  id            String     @id @default(cuid())
+  institutionId String
+  level         CycleLevel
+  name          String
+  code          String
+  /// Durée nominale du cycle, en années.
+  durationYears Int
+  /// Crédits ECTS requis pour valider le cycle (180 pour une licence type).
+  totalCredits  Int?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  programs    Program[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId, level])
+}
+
+/// Programme / filière / parcours diplômant.
+model Program {
+  id            String         @id @default(cuid())
+  institutionId String
+  facultyId     String
+  departmentId  String?
+  cycleId       String
+  name          String
+  code          String
+  /// Durée du programme en années ; peut différer de celle du cycle.
+  durationYears Int
+  status        AcademicStatus @default(DRAFT)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  institution  Institution  @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  faculty      Faculty      @relation(fields: [facultyId], references: [id], onDelete: Cascade)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  cycle        Cycle        @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+  semesters    Semester[]
+  courses      Course[]
+  enrollments  Enrollment[]
+  competencies Competency[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId, status])
+  @@index([facultyId])
+  @@index([departmentId])
+  @@index([cycleId])
+}
+
+/// Année universitaire d'un établissement (ex. « 2025-2026 »).
+model AcademicYear {
+  id            String         @id @default(cuid())
+  institutionId String
+  name          String
+  startDate     DateTime
+  endDate       DateTime
+  /// Année courante de l'établissement. Une seule à la fois, garanti applicativement.
+  isCurrent     Boolean        @default(false)
+  status        AcademicStatus @default(DRAFT)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  semesters   Semester[]
+
+  @@unique([institutionId, name])
+  @@index([institutionId, status])
+}
+
+/// Semestre d'un programme pour une année universitaire donnée (S1, S2, ...).
+model Semester {
+  id             String         @id @default(cuid())
+  programId      String
+  academicYearId String
+  name           String
+  /// Rang du semestre dans le cursus : 1 à 6 pour une licence, 7 à 10 pour un master.
+  number         Int
+  startDate      DateTime
+  endDate        DateTime
+  status         AcademicStatus @default(DRAFT)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  program      Program      @relation(fields: [programId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  courses      Course[]
+  enrollments  Enrollment[]
+
+  @@unique([programId, academicYearId, number])
+  @@index([academicYearId])
+  @@index([programId, status])
+}
+
+/**
+ * =========================================================================
+ * Domaine pédagogique
+ * =========================================================================
+ */
+
+/// Cycle de vie d'un cours.
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// Cycle de vie d'un contenu pédagogique (module, leçon).
+/// Distinct de CourseStatus : une leçon peut rester en brouillon dans un cours publié.
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// État de l'inscription pédagogique d'un étudiant pour un semestre.
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  WITHDRAWN
+  SUSPENDED
+}
+
+/// Rôle d'un enseignant sur un cours.
+enum TeacherAssignmentRole {
+  LEAD
+  CO_TEACHER
+  ASSISTANT
+}
+
+/// Niveau de maîtrise attendu d'une compétence.
+enum CompetencyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+/// Nature d'un prérequis : entre cours, ou entre compétences.
+enum PrerequisiteKind {
+  COURSE
+  COMPETENCY
+}
+
+/// Cours (UE/ECUE) rattaché à un programme et à un semestre précis.
+model Course {
+  id            String       @id @default(cuid())
+  institutionId String
+  programId     String
+  semesterId    String
+  /// Facultatifs : utiles pour les cours mutualisés ou pilotés par un département.
+  facultyId     String?
+  departmentId  String?
+  title         String
+  code          String
+  description   String?
+  /// Crédits ECTS.
+  credits       Int          @default(0)
+  coefficient   Float        @default(1)
+  /// Ordre d'affichage dans la maquette du semestre.
+  order         Int          @default(0)
+  status        CourseStatus @default(DRAFT)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  institution    Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  program        Program            @relation(fields: [programId], references: [id], onDelete: Cascade)
+  semester       Semester           @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  faculty        Faculty?           @relation(fields: [facultyId], references: [id], onDelete: SetNull)
+  department     Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  modules        Module[]
+  assignments    CourseAssignment[]
+  lessonProgress LessonProgress[]
+  quizzes        Quiz[]
+  aiGenerations  AIGeneration[]
+  competencies   Competency[]
+  outcomes       LearningOutcome[]
+  /// Prérequis exigés par ce cours.
+  prerequisites  Prerequisite[]     @relation("CoursePrerequisites")
+  /// Cours pour lesquels celui-ci est un prérequis.
+  requiredFor    Prerequisite[]     @relation("CourseRequiredBy")
+
+  @@unique([semesterId, code])
+  @@index([institutionId, status])
+  @@index([programId])
+  @@index([semesterId, order])
+}
+
+/// Affectation d'un enseignant à un cours.
+/// Référence un User ; le fait qu'il soit PROFESSOR dans l'établissement du cours
+/// est une règle applicative (InstitutionUser), non exprimable ici.
+model CourseAssignment {
+  id         String                @id @default(cuid())
+  courseId   String
+  userId     String
+  role       TeacherAssignmentRole @default(LEAD)
+  assignedAt DateTime              @default(now())
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@index([userId])
+  @@index([courseId, role])
+}
+
+/// Inscription pédagogique d'un étudiant à un programme pour un semestre donné.
+/// L'accès aux cours en découle (programme + semestre) : il n'y a pas d'inscription
+/// cours par cours à ce stade.
+model Enrollment {
+  id            String           @id @default(cuid())
+  institutionId String
+  userId        String
+  programId     String
+  semesterId    String
+  status        EnrollmentStatus @default(ACTIVE)
+  enrolledAt    DateTime         @default(now())
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program     Program     @relation(fields: [programId], references: [id], onDelete: Cascade)
+  semester    Semester    @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, semesterId])
+  @@index([institutionId, status])
+  @@index([programId, semesterId])
+  @@index([userId])
+}
+
+/// Module (chapitre) d'un cours.
+model Module {
+  id          String        @id @default(cuid())
+  courseId    String
+  title       String
+  description String?
+  order       Int           @default(0)
+  status      ContentStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  course         Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons        Lesson[]
+  outcomes       LearningOutcome[]
+  lessonProgress LessonProgress[]
+  quizzes        Quiz[]
+
+  @@index([courseId, order])
+}
+
+/// Leçon (séance) d'un module.
+model Lesson {
+  id               String        @id @default(cuid())
+  moduleId         String
+  title            String
+  /// Contenu pédagogique. Format libre à ce stade ; à structurer avant l'IA.
+  content          String?
+  order            Int           @default(0)
+  /// Durée estimée, en minutes.
+  estimatedMinutes Int?
+  status           ContentStatus @default(DRAFT)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  module   Module            @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  outcomes LearningOutcome[]
+  progress LessonProgress[]
+  quizzes  Quiz[]
+
+  @@index([moduleId, order])
+}
+
+/// Compétence du référentiel : rattachée soit à un programme, soit à un cours.
+/// Exactement l'un des deux doit être renseigné (règle applicative).
+model Competency {
+  id            String          @id @default(cuid())
+  institutionId String
+  programId     String?
+  courseId      String?
+  title         String
+  description   String?
+  level         CompetencyLevel @default(BEGINNER)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  program       Program?          @relation(fields: [programId], references: [id], onDelete: Cascade)
+  course        Course?           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  outcomes      LearningOutcome[]
+  /// Compétences exigées en amont de celle-ci.
+  prerequisites Prerequisite[]    @relation("CompetencyPrerequisites")
+  /// Compétences dont celle-ci est le prérequis.
+  requiredFor   Prerequisite[]    @relation("CompetencyRequiredBy")
+
+  @@index([institutionId, level])
+  @@index([programId])
+  @@index([courseId])
+}
+
+/// Acquis d'apprentissage, rattaché à un cours, un module ou une leçon.
+/// Exactement un des trois rattachements doit être renseigné (règle applicative).
+/// Le lien optionnel vers une compétence est ce qui permettra plus tard d'ancrer
+/// les contenus sur le référentiel plutôt que sur du texte libre.
+model LearningOutcome {
+  id           String   @id @default(cuid())
+  courseId     String?
+  moduleId     String?
+  lessonId     String?
+  competencyId String?
+  title        String
+  description  String?
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  course     Course?     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  module     Module?     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  lesson     Lesson?     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  competency Competency? @relation(fields: [competencyId], references: [id], onDelete: SetNull)
+
+  @@index([courseId, order])
+  @@index([moduleId, order])
+  @@index([lessonId, order])
+  @@index([competencyId])
+}
+
+/// Prérequis, entre deux cours ou entre deux compétences.
+/// Table unique volontairement : `kind` désigne la paire de colonnes utilisée,
+/// ce qui permet d'ajouter d'autres natures de prérequis sans nouvelle table.
+/// La cohérence (paire conforme à `kind`, absence d'auto-référence et de cycle)
+/// est une règle applicative.
+model Prerequisite {
+  id                   String           @id @default(cuid())
+  institutionId        String
+  kind                 PrerequisiteKind
+  /// Utilisés lorsque kind = COURSE.
+  courseId             String?
+  requiredCourseId     String?
+  /// Utilisés lorsque kind = COMPETENCY.
+  competencyId         String?
+  requiredCompetencyId String?
+  /// Prérequis bloquant ou simplement recommandé.
+  isMandatory          Boolean          @default(true)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  institution        Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  course             Course?     @relation("CoursePrerequisites", fields: [courseId], references: [id], onDelete: Cascade)
+  requiredCourse     Course?     @relation("CourseRequiredBy", fields: [requiredCourseId], references: [id], onDelete: Cascade)
+  competency         Competency? @relation("CompetencyPrerequisites", fields: [competencyId], references: [id], onDelete: Cascade)
+  requiredCompetency Competency? @relation("CompetencyRequiredBy", fields: [requiredCompetencyId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, requiredCourseId])
+  @@unique([competencyId, requiredCompetencyId])
+  @@index([institutionId, kind])
+}
+
+/**
+ * =========================================================================
+ * Progression des étudiants
+ * =========================================================================
+ */
+
+/// État d'avancement d'un étudiant sur une leçon.
+/// NOT_STARTED n'est jamais stocké : l'absence de ligne vaut « pas commencé ».
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+/// Progression d'un étudiant sur une leçon — seule vérité stockée.
+/// Les avancements par module et par cours en sont **dérivés** par comptage :
+/// pas de compteurs dénormalisés à resynchroniser quand un enseignant ajoute,
+/// publie ou dépublie une leçon.
+/// `moduleId` et `courseId` sont dupliqués ici uniquement pour agréger sans
+/// jointure ; ils sont toujours déduits de la leçon côté serveur.
+model LessonProgress {
+  id            String         @id @default(cuid())
+  userId        String
+  lessonId      String
+  moduleId      String
+  courseId      String
+  status        ProgressStatus @default(IN_PROGRESS)
+  firstViewedAt DateTime       @default(now())
+  lastViewedAt  DateTime       @default(now())
+  completedAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  /// Une seule ligne de progression par étudiant et par leçon.
+  @@unique([userId, lessonId])
+  @@index([userId, courseId, status])
+  @@index([userId, moduleId])
+  @@index([userId, lastViewedAt])
+  @@index([lessonId])
+}
+
+/**
+ * =========================================================================
+ * Journal d'audit
+ * =========================================================================
+ */
+
+/// Trace immuable d'une action structurante : qui, quoi, quand, sur quel objet.
+///
+/// Volontairement générique (`entityType` + `entityId` en texte plutôt que
+/// relations typées) : le journal doit survivre à la suppression de l'objet
+/// concerné, ce qu'une clé étrangère interdirait.
+///
+/// `metadata` ne contient que des champs non sensibles, choisis explicitement
+/// par l'appelant : jamais de mot de passe, de hash, ni de corps de requête brut.
+model AuditLog {
+  id            String   @id @default(cuid())
+  /// Auteur de l'action. Conservé même si le compte est ensuite désactivé.
+  actorUserId   String
+  /// Établissement concerné ; null pour une action de niveau plateforme.
+  institutionId String?
+  /// Verbe métier, ex. « institution.create », « lesson.update ».
+  action        String
+  /// Type de l'objet visé, ex. « Institution », « Lesson ».
+  entityType    String
+  entityId      String
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  actor       User         @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+  institution Institution? @relation(fields: [institutionId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([institutionId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+/**
+ * =========================================================================
+ * Quiz d'entraînement
+ * Retour pédagogique immédiat pour l'étudiant et signal pour l'enseignant.
+ * Ce n'est ni un examen, ni une note officielle : aucun lien avec les crédits,
+ * la validation ou la délibération.
+ * =========================================================================
+ */
+
+/// Cycle de vie d'un quiz.
+enum QuizStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// Types de questions pris en charge.
+/// SHORT_TEXT n'est **pas** corrigé automatiquement : la réponse est enregistrée
+/// et laissée à l'appréciation de l'enseignant, hors du score automatique.
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  SHORT_TEXT
+}
+
+/// État d'une tentative.
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+}
+
+/// Résultat d'un appel à un fournisseur d'IA.
+enum AIGenerationStatus {
+  SUCCESS
+  FAILED
+}
+
+/// Quiz rattaché à un cours, et facultativement à un module ou une leçon précise.
+model Quiz {
+  id            String     @id @default(cuid())
+  institutionId String
+  courseId      String
+  moduleId      String?
+  lessonId      String?
+  title         String
+  description   String?
+  status        QuizStatus @default(DRAFT)
+  /// Score minimal (en %) considéré comme réussi. Indicatif, jamais bloquant.
+  passingScore  Int?
+  order         Int        @default(0)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  institution Institution    @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  course      Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  module      Module?        @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  lesson      Lesson?        @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  questions   QuizQuestion[]
+  attempts    QuizAttempt[]
+
+  @@index([courseId, status, order])
+  @@index([institutionId])
+  @@index([moduleId])
+  @@index([lessonId])
+}
+
+/// Question d'un quiz.
+/// `options` et `correctAnswer` sont en JSON pour couvrir les trois types sans
+/// table supplémentaire : options = tableau de libellés ; correctAnswer =
+/// tableau d'indices (choix multiple), booléen (vrai/faux), ou null (texte libre).
+model QuizQuestion {
+  id            String       @id @default(cuid())
+  quizId        String
+  prompt        String
+  type          QuestionType @default(MULTIPLE_CHOICE)
+  options       Json?
+  correctAnswer Json?
+  explanation   String?
+  points        Int          @default(1)
+  order         Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  quiz    Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers QuizAnswer[]
+
+  @@index([quizId, order])
+}
+
+/// Tentative d'un étudiant sur un quiz.
+model QuizAttempt {
+  id          String        @id @default(cuid())
+  quizId      String
+  userId      String
+  status      AttemptStatus @default(IN_PROGRESS)
+  /// Points obtenus sur les questions corrigées automatiquement.
+  score       Int?
+  /// Total des points automatiquement corrigeables au moment de la soumission.
+  maxScore    Int?
+  submittedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  quiz    Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers QuizAnswer[]
+
+  @@index([userId, quizId, status])
+  @@index([quizId, submittedAt])
+}
+
+/// Réponse à une question, dans une tentative.
+/// `isCorrect` reste null pour les questions à correction manuelle (SHORT_TEXT).
+model QuizAnswer {
+  id            String   @id @default(cuid())
+  attemptId     String
+  questionId    String
+  response      Json?
+  isCorrect     Boolean?
+  pointsAwarded Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  attempt  QuizAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@index([questionId])
+}
+
+/**
+ * Historique de gouvernance des appels IA.
+ * `inputSummary` ne contient que les analytics agrégées et dé-identifiées ;
+ * aucune clé API, aucun secret et aucune donnée étudiante nominative.
+ */
+model AIGeneration {
+  id            String             @id @default(cuid())
+  actorUserId   String
+  institutionId String
+  courseId      String?
+  type          String
+  provider      String
+  model         String
+  inputSummary  Json
+  output        Json
+  status        AIGenerationStatus
+  errorMessage  String?
+  createdAt     DateTime           @default(now())
+
+  actor       User        @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  course      Course?     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([actorUserId, createdAt])
+  @@index([institutionId, createdAt])
+  @@index([courseId, createdAt])
+  @@index([type, createdAt])
+}

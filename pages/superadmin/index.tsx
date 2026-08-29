@@ -1,3 +1,5 @@
+import { Role } from '@prisma/client';
+import { requireRoleSSR } from '../../lib/pageGuard';
 import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '../../components/app/AppShell';
 import { Card, CardHeader } from '../../components/ui/Card';
@@ -9,44 +11,76 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Reveal } from '../../components/anim/Reveal';
 import { Drawer } from '../../components/overlay/Drawer';
 import { useToast } from '../../components/overlay/Toast';
+import { AuditFeed } from '../../components/admin/AuditFeed';
 import { useRegisterCommands } from '../../components/overlay/command';
 import {
   PlusIcon,
   BuildingIcon,
-  ProgressIcon,
-  BellIcon,
-  CheckIcon,
   GlobeIcon,
   UsersIcon,
+  LayersIcon,
 } from '../../components/ui/icons';
 
-const PROGRAMS = ['Licence', 'Master'];
-const COURSES = ['Finance d’entreprise', 'Comptabilité générale', 'Microéconomie', 'Data Analytics'];
+/** Vue d'ensemble servie par /api/superadmin/overview — comptages réels uniquement. */
+interface Overview {
+  totals: {
+    institutions: number;
+    activeInstitutions: number;
+    inactiveInstitutions: number;
+    admins: number;
+    professors: number;
+    students: number;
+    programs: number;
+    courses: number;
+    publishedCourses: number;
+  };
+  institutions: {
+    id: string;
+    name: string;
+    slug: string;
+    country: string | null;
+    status: 'active' | 'inactive';
+    adminEmail: string | null;
+    counts: {
+      admins: number;
+      professors: number;
+      students: number;
+      programs: number;
+      courses: number;
+    };
+  }[];
+}
 
-const health = [
-  { icon: BuildingIcon, label: '1 université inactive', hint: 'Aucune connexion depuis 14 j', tone: 'warning' as const },
-  { icon: ProgressIcon, label: 'Activité en hausse', hint: '+18 % cette semaine', tone: 'success' as const },
-  { icon: BellIcon, label: '2 alertes', hint: 'Quota étudiants bientôt atteint', tone: 'neutral' as const },
-];
-
-const netActivity = [
-  { text: 'Université de Dakar — 42 inscriptions', when: 'Aujourd’hui' },
-  { text: 'IUG Abidjan — nouveau programme Master', when: 'Hier' },
-  { text: 'ISM — 1re session live diffusée', when: 'Il y a 3 j' },
-];
+const EMPTY_OVERVIEW: Overview = {
+  totals: {
+    institutions: 0,
+    activeInstitutions: 0,
+    inactiveInstitutions: 0,
+    admins: 0,
+    professors: 0,
+    students: 0,
+    programs: 0,
+    courses: 0,
+    publishedCourses: 0,
+  },
+  institutions: [],
+};
 
 export default function SuperAdminNetwork() {
   const { toast } = useToast();
-  const [universities, setUniversities] = useState<any[]>([]);
+  const [overview, setOverview] = useState<Overview | null>(null);
   const [drawer, setDrawer] = useState(false);
 
-  const fetchUniversities = () => {
-    fetch('/api/universities/list')
-      .then((r) => r.json())
-      .then((d) => setUniversities(Array.isArray(d) ? d : []))
-      .catch(() => setUniversities([]));
+  const fetchOverview = () => {
+    fetch('/api/superadmin/overview')
+      .then((r) => (r.ok ? r.json() : EMPTY_OVERVIEW))
+      .then((d) => setOverview({ ...EMPTY_OVERVIEW, ...d }))
+      .catch(() => setOverview(EMPTY_OVERVIEW));
   };
-  useEffect(fetchUniversities, []);
+  useEffect(fetchOverview, []);
+
+  const totals = overview?.totals ?? EMPTY_OVERVIEW.totals;
+  const universities = overview?.institutions ?? [];
 
   useRegisterCommands(
     'super:actions',
@@ -63,17 +97,48 @@ export default function SuperAdminNetwork() {
     []
   );
 
-  const activeRate = useMemo(() => {
-    if (universities.length === 0) return 100;
-    const active = universities.filter((u) => u.status !== 'inactive').length;
-    return Math.round((active / universities.length) * 100);
-  }, [universities]);
+  const activeRate = useMemo(
+    () =>
+      totals.institutions === 0
+        ? 0
+        : Math.round((totals.activeInstitutions / totals.institutions) * 100),
+    [totals]
+  );
+
+  // Bandeau : uniquement des comptages issus de la base.
+  const metrics = useMemo(
+    () => [
+      {
+        icon: BuildingIcon,
+        label: `${totals.institutions} établissement${totals.institutions > 1 ? 's' : ''}`,
+        hint:
+          totals.inactiveInstitutions > 0
+            ? `${totals.activeInstitutions} actif${totals.activeInstitutions > 1 ? 's' : ''} · ${
+                totals.inactiveInstitutions
+              } inactif${totals.inactiveInstitutions > 1 ? 's' : ''}`
+            : 'Tous actifs',
+      },
+      {
+        icon: UsersIcon,
+        label: `${totals.admins + totals.professors + totals.students} comptes rattachés`,
+        hint: `${totals.admins} admin · ${totals.professors} enseignants · ${totals.students} étudiants`,
+      },
+      {
+        icon: LayersIcon,
+        label: `${totals.programs} programme${totals.programs > 1 ? 's' : ''}`,
+        hint: `${totals.courses} cours · ${totals.publishedCourses} publié${
+          totals.publishedCourses > 1 ? 's' : ''
+        }`,
+      },
+    ],
+    [totals]
+  );
 
   return (
     <AppShell
       role="superadmin"
       title="Réseau"
-      subtitle="Santé et activité des établissements partenaires"
+      subtitle="Établissements partenaires du réseau"
       action={
         <button onClick={() => setDrawer(true)} className={buttonClasses('primary', 'md', 'hidden sm:inline-flex')}>
           <PlusIcon size={18} /> Ajouter une université
@@ -83,20 +148,19 @@ export default function SuperAdminNetwork() {
       {/* HEALTH BAND */}
       <Reveal>
         <div className="grid gap-3 sm:grid-cols-3">
-          {health.map((h) => (
-            <button
-              key={h.label}
-              onClick={() => toast({ title: h.label, description: h.hint, tone: 'info' })}
-              className="group flex items-center gap-3 rounded-hero border border-hairline bg-white p-4 text-left shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lift"
+          {metrics.map((m) => (
+            <div
+              key={m.label}
+              className="flex items-center gap-3 rounded-hero border border-hairline bg-white p-4 text-left shadow-soft"
             >
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-cloud text-ink/60 transition-colors group-hover:bg-oca-tint group-hover:text-oca">
-                <h.icon size={20} />
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-cloud text-ink/60">
+                <m.icon size={20} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-medium text-ink">{h.label}</span>
-                <span className="block truncate text-sm text-ink/45">{h.hint}</span>
+                <span className="block truncate text-[15px] font-medium text-ink">{m.label}</span>
+                <span className="block truncate text-sm text-ink/45">{m.hint}</span>
               </span>
-            </button>
+            </div>
           ))}
         </div>
       </Reveal>
@@ -134,7 +198,13 @@ export default function SuperAdminNetwork() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-medium text-ink">{u.name}</p>
-                        <p className="truncate text-sm text-ink/45">{u.adminEmail}</p>
+                        <p className="truncate text-sm text-ink/45">
+                          {u.adminEmail ?? 'Aucun administrateur'}
+                        </p>
+                        <p className="truncate text-[13px] text-ink/35">
+                          {u.counts.students} étudiants · {u.counts.professors} enseignants ·{' '}
+                          {u.counts.programs} programmes · {u.counts.courses} cours
+                        </p>
                       </div>
                       <Badge tone={u.status === 'inactive' ? 'warning' : 'success'} dot>
                         {u.status === 'inactive' ? 'Inactive' : 'Active'}
@@ -149,19 +219,7 @@ export default function SuperAdminNetwork() {
           <Reveal delay={110}>
             <Card>
               <CardHeader title="Activité du réseau" />
-              <ul className="space-y-4">
-                {netActivity.map((a, i) => (
-                  <li key={i} className="flex gap-3.5">
-                    <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-oca-tint text-oca">
-                      <GlobeIcon size={16} />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-[15px] font-medium text-ink">{a.text}</p>
-                      <p className="text-sm text-ink/45">{a.when}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <AuditFeed limit={8} />
             </Card>
           </Reveal>
         </div>
@@ -174,9 +232,17 @@ export default function SuperAdminNetwork() {
               <div className="flex items-center gap-5">
                 <ProgressRing value={activeRate} size={92} stroke={9} />
                 <div>
-                  <p className="text-2xl font-medium tracking-tightest text-ink">{universities.length}</p>
-                  <p className="text-sm text-ink/45">{universities.length > 1 ? 'établissements' : 'établissement'}</p>
-                  <Badge tone="success" className="mt-2">{activeRate}% actifs</Badge>
+                  <p className="text-2xl font-medium tracking-tightest text-ink">
+                    {totals.institutions}
+                  </p>
+                  <p className="text-sm text-ink/45">
+                    {totals.institutions > 1 ? 'établissements' : 'établissement'}
+                  </p>
+                  {totals.institutions > 0 && (
+                    <Badge tone={totals.inactiveInstitutions > 0 ? 'warning' : 'success'} className="mt-2">
+                      {activeRate}% actifs
+                    </Badge>
+                  )}
                 </div>
               </div>
             </Card>
@@ -211,7 +277,7 @@ export default function SuperAdminNetwork() {
         open={drawer}
         onClose={() => setDrawer(false)}
         onCreated={(u) => {
-          setUniversities((prev) => [...prev, u]);
+          fetchOverview();
           toast({ title: 'Université ajoutée', description: u.name, tone: 'success' });
         }}
         onError={() => toast({ title: 'Échec de la création', description: 'Veuillez réessayer.', tone: 'error' })}
@@ -231,13 +297,12 @@ function CreateUniversityDrawer({
   onCreated: (u: any) => void;
   onError: () => void;
 }) {
-  const empty = { name: '', adminEmail: '', adminPassword: '', programs: [] as string[], courses: [] as string[] };
+  const empty = { name: '', adminEmail: '', adminPassword: '', country: '' };
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const set = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
-  const toggle = (field: 'programs' | 'courses', v: string) =>
-    setForm((p) => ({ ...p, [field]: p[field].includes(v) ? p[field].filter((x) => x !== v) : [...p[field], v] }));
 
   const submit = async () => {
     if (!form.name || !form.adminEmail || !form.adminPassword) {
@@ -245,18 +310,20 @@ function CreateUniversityDrawer({
       return;
     }
     setLoading(true);
+    setError('');
     try {
       const res = await fetch('/api/universities/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-      if (!res.ok) throw new Error();
-      const created = await res.json().catch(() => null);
-      onCreated(created && created.id ? created : { ...form, id: Date.now().toString(), status: 'active' });
+      const created = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(created.message || 'Création impossible');
+      onCreated(created);
       setForm(empty);
       onClose();
-    } catch {
+    } catch (err: any) {
+      setError(err.message || 'Création impossible');
       onError();
     } finally {
       setLoading(false);
@@ -282,13 +349,13 @@ function CreateUniversityDrawer({
       }
     >
       <div className="space-y-5">
-        <Input label="Nom de l’université" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Université de Dakar" />
+        <Input label="Nom de l’université" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Nom officiel de l’établissement" />
         <Input
           label="Email administrateur"
           type="email"
           value={form.adminEmail}
           onChange={(e) => set('adminEmail', e.target.value)}
-          placeholder="admin@universite.africa"
+          placeholder="admin@etablissement.africa"
         />
         <Input
           label="Mot de passe administrateur"
@@ -298,46 +365,27 @@ function CreateUniversityDrawer({
           placeholder="••••••••"
         />
 
-        <ChipGroup title="Programmes" options={PROGRAMS} selected={form.programs} onToggle={(v) => toggle('programs', v)} />
-        <ChipGroup title="Cours disponibles" options={COURSES} selected={form.courses} onToggle={(v) => toggle('courses', v)} />
+        <Input
+          label="Pays (optionnel)"
+          value={form.country}
+          onChange={(e) => set('country', e.target.value)}
+          placeholder="CI"
+        />
+
+        <p className="text-sm text-ink/45">
+          Les programmes et les cours sont créés ensuite par l’administrateur de l’établissement,
+          depuis son espace.
+        </p>
+
+        {error && (
+          <div role="alert" className="rounded-card border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {error}
+          </div>
+        )}
       </div>
     </Drawer>
   );
 }
 
-function ChipGroup({
-  title,
-  options,
-  selected,
-  onToggle,
-}: {
-  title: string;
-  options: string[];
-  selected: string[];
-  onToggle: (v: string) => void;
-}) {
-  return (
-    <div>
-      <p className="mb-2 text-sm font-medium text-ink/70">{title}</p>
-      <div className="flex flex-wrap gap-2">
-        {options.map((o) => {
-          const on = selected.includes(o);
-          return (
-            <button
-              key={o}
-              type="button"
-              onClick={() => onToggle(o)}
-              className={
-                'inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors ' +
-                (on ? 'border-oca bg-oca text-white' : 'border-hairline bg-white text-ink/65 hover:bg-cloud')
-              }
-            >
-              {on && <CheckIcon size={14} />}
-              {o}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+// Protection côté serveur : la page n'est rendue que pour un rôle autorisé.
+export const getServerSideProps = requireRoleSSR([Role.SUPER_ADMIN]);
