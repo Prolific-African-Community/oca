@@ -8,6 +8,7 @@ import {
 import { prisma } from '../../../../../../../lib/prisma'
 import { requireAssignedCourse } from '../../../../../../../lib/teacherAccess'
 import { AuditAction, createAuditLog } from '../../../../../../../lib/audit'
+import type { GeneratedCourseDraft } from '../../../../../../../lib/aiCourseDraft'
 import {
   AI_COURSE_DRAFT_TYPE,
   CourseDraftMode,
@@ -19,6 +20,7 @@ import {
   structuredLessonContentJson,
   structuredLessonContentToPlainText,
 } from '../../../../../../../lib/lessonContent'
+import { normalizeEditedCourseDraft } from '../../../../../../../lib/editedCourseDraft'
 
 const inFlightApplications = new Set<string>()
 
@@ -62,9 +64,8 @@ export default async function handler(
   const access = await requireAssignedCourse(req, res, req.query.courseId)
   if (!access) return
 
-  const id = generationId(
-    (req.body as Record<string, unknown> | undefined)?.aiGenerationId
-  )
+  const body = (req.body ?? {}) as Record<string, unknown>
+  const id = generationId(body.aiGenerationId)
   if (!id) return res.status(400).json({ message: 'Génération IA manquante' })
 
   const generation = await prisma.aIGeneration.findFirst({
@@ -114,7 +115,49 @@ export default async function handler(
       })
     }
 
-    const draft = generation.output
+    /**
+     * Brouillon retouché par l'enseignant, le cas échéant.
+     *
+     * Il n'est jamais cru sur parole : il repasse par un validateur d'intégrité,
+     * ses quiz sont **ignorés** au profit de ceux du brouillon d'origine, et le
+     * nombre de modules et de leçons doit rester celui qui a été généré. Rien
+     * n'écrase l'enregistrement AIGeneration : la sortie brute du fournisseur
+     * reste intacte pour la traçabilité.
+     */
+    // Capturé une fois : le rétrécissement de type est perdu dans les closures.
+    const original: GeneratedCourseDraft = generation.output
+    let draft: GeneratedCourseDraft = original
+    let editedBeforeApply = false
+    let editWarnings: string[] = []
+
+    if (body.editedDraft !== undefined) {
+      const edited = normalizeEditedCourseDraft(body.editedDraft, guidance)
+
+      if (!edited) {
+        return res
+          .status(400)
+          .json({ code: 'INVALID_EDIT', message: 'Brouillon modifié illisible.' })
+      }
+      if (edited.issues.length > 0) {
+        return res.status(400).json({
+          code: 'INVALID_EDIT',
+          message: 'Le brouillon modifié est incomplet.',
+          issues: edited.issues,
+        })
+      }
+
+      // Les quiz proviennent du brouillon d'origine, jamais du client.
+      draft = {
+        courseSummary: edited.draft.courseSummary,
+        modules: edited.draft.modules.map((module, index) => ({
+          ...module,
+          quizzes: original.modules[index]?.quizzes ?? [],
+        })),
+      }
+      editedBeforeApply = true
+      editWarnings = edited.warnings
+    }
+
     const created = await prisma.$transaction(async (tx) => {
       const existingModuleCount = await tx.module.count({
         where: { courseId: access.courseId },
@@ -226,7 +269,12 @@ export default async function handler(
           action: AuditAction.AI_COURSE_APPLY,
           entityType: 'AIGeneration',
           entityId: generation.id,
-          metadata: { courseId: access.courseId, ...counts },
+          metadata: {
+            courseId: access.courseId,
+            ...counts,
+            // Trace la retouche sans recopier le contenu dans le journal.
+            editedBeforeApply,
+          },
         },
       })
       return { counts, modules, quizzes }
@@ -291,6 +339,8 @@ export default async function handler(
       aiGenerationId: generation.id,
       created: created.counts,
       status: 'DRAFT',
+      editedBeforeApply,
+      warnings: editWarnings,
       message:
         'Brouillon appliqué. Relisez puis publiez chaque contenu manuellement.',
     })

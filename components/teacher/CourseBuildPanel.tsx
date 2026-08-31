@@ -198,10 +198,288 @@ function QuizDetail({ module }: { module: DraftModulePreview }) {
             ))}
           </ol>
           <p className="text-ink/40 mt-3 text-xs">
-            Retour d’apprentissage, jamais une note officielle.
+            Retour d’apprentissage, jamais une note officielle. Les quiz ne sont
+            pas modifiables avant application : ajustez-les ensuite dans vos
+            quiz du cours.
           </p>
         </div>
       ))}
+    </div>
+  )
+}
+
+/**
+ * Découpe le contenu du brouillon en introduction et explication, comme le
+ * fait `structuredLessonContentFromDraft` : le premier paragraphe est
+ * l'introduction. Le cas d'un paragraphe unique est traité à part pour ne pas
+ * dupliquer le texte au moment de la recomposition.
+ */
+function splitDraftContent(content: string): {
+  introduction: string
+  explanation: string
+} {
+  const paragraphs = content
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+
+  if (paragraphs.length <= 1) {
+    return { introduction: paragraphs[0] ?? '', explanation: '' }
+  }
+  return {
+    introduction: paragraphs[0],
+    explanation: paragraphs.slice(1).join('\n\n'),
+  }
+}
+
+function Field({
+  label,
+  hint,
+  value,
+  rows,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: string
+  rows: number
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-sm font-medium text-ink/70">
+        {label}
+      </span>
+      {hint && <span className="text-ink/45 mb-1.5 block text-xs">{hint}</span>}
+      <textarea
+        value={value}
+        rows={rows}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-card border border-hairline bg-white px-4 py-3 text-[15px] leading-relaxed text-ink transition-colors hover:border-ink/20 focus:border-apple focus:outline-none focus:ring-4 focus:ring-apple/15"
+      />
+    </label>
+  )
+}
+
+/**
+ * Retouche locale d'une leçon du brouillon.
+ *
+ * Rien n'est envoyé au serveur ici : les modifications vivent dans l'état du
+ * navigateur jusqu'à l'application, et disparaissent si le panneau est fermé.
+ */
+function LessonEditor({
+  lesson,
+  onSave,
+  onCancel,
+  onRestore,
+}: {
+  lesson: DraftLessonPreview
+  onSave: (lesson: DraftLessonPreview) => void
+  onCancel: () => void
+  onRestore: () => void
+}) {
+  const split = splitDraftContent(lesson.content)
+  const [form, setForm] = useState({
+    title: lesson.title,
+    estimatedMinutes: String(lesson.estimatedMinutes),
+    introduction: split.introduction,
+    explanation: split.explanation,
+    keyConcepts: (lesson.keyConcepts ?? []).join('\n'),
+    practicalExample: lesson.practicalExample ?? '',
+    recap: lesson.recap ?? '',
+    exercises: (lesson.exercises ?? []).join('\n'),
+  })
+
+  const minutes = Number(form.estimatedMinutes)
+  const blocking = [
+    !form.title.trim() && 'le titre',
+    !form.introduction.trim() &&
+      !form.explanation.trim() &&
+      'le contenu principal',
+    (!Number.isInteger(minutes) || minutes < 5 || minutes > 240) &&
+      'une durée entre 5 et 240 minutes',
+  ].filter(Boolean) as string[]
+
+  const soft = [
+    !form.keyConcepts.trim() && 'concepts clés',
+    !form.practicalExample.trim() && 'exemple pratique',
+    !form.recap.trim() && 'récapitulatif',
+    !form.exercises.trim() && 'exercices',
+  ].filter(Boolean) as string[]
+
+  const save = () =>
+    onSave({
+      ...lesson,
+      title: form.title.trim(),
+      estimatedMinutes: minutes,
+      content: [form.introduction.trim(), form.explanation.trim()]
+        .filter(Boolean)
+        .join('\n\n'),
+      keyConcepts: form.keyConcepts
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean),
+      practicalExample: form.practicalExample.trim(),
+      recap: form.recap.trim(),
+      exercises: form.exercises
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    })
+
+  return (
+    <div className="mt-3 space-y-4 rounded-card border border-apple/30 bg-white p-4">
+      <p className="text-ink/45 text-sm">
+        Vos modifications restent dans ce navigateur jusqu’à l’application.
+      </p>
+
+      <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
+        <Field
+          label="Titre"
+          value={form.title}
+          rows={1}
+          onChange={(v) => setForm((c) => ({ ...c, title: v }))}
+        />
+        <Field
+          label="Durée (minutes)"
+          value={form.estimatedMinutes}
+          rows={1}
+          onChange={(v) => setForm((c) => ({ ...c, estimatedMinutes: v }))}
+        />
+      </div>
+
+      <Field
+        label="Introduction"
+        hint="Premier paragraphe de la leçon."
+        value={form.introduction}
+        rows={4}
+        onChange={(v) => setForm((c) => ({ ...c, introduction: v }))}
+      />
+      <Field
+        label="Concepts clés"
+        hint="Un concept par ligne."
+        value={form.keyConcepts}
+        rows={5}
+        onChange={(v) => setForm((c) => ({ ...c, keyConcepts: v }))}
+      />
+      <Field
+        label="Explication"
+        value={form.explanation}
+        rows={12}
+        onChange={(v) => setForm((c) => ({ ...c, explanation: v }))}
+      />
+      <Field
+        label="Exemple pratique"
+        value={form.practicalExample}
+        rows={6}
+        onChange={(v) => setForm((c) => ({ ...c, practicalExample: v }))}
+      />
+      <Field
+        label="Récapitulatif"
+        value={form.recap}
+        rows={4}
+        onChange={(v) => setForm((c) => ({ ...c, recap: v }))}
+      />
+      <Field
+        label="Exercices"
+        hint="Un exercice par ligne."
+        value={form.exercises}
+        rows={6}
+        onChange={(v) => setForm((c) => ({ ...c, exercises: v }))}
+      />
+
+      {blocking.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-card border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600"
+        >
+          Champ obligatoire manquant : {blocking.join(', ')}.
+        </div>
+      )}
+      {blocking.length === 0 && soft.length > 0 && (
+        <div className="rounded-card border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Sections vides : {soft.join(', ')}. Vous pouvez appliquer malgré tout.
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button size="md" disabled={blocking.length > 0} onClick={save}>
+          Enregistrer localement
+        </Button>
+        <button
+          onClick={onCancel}
+          className="text-ink/60 text-sm font-medium hover:underline"
+        >
+          Annuler
+        </button>
+        <button
+          onClick={onRestore}
+          className="text-sm font-medium text-apple hover:underline"
+        >
+          Rétablir la version générée
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Retouche locale d'un module : titre et description. */
+function ModuleEditor({
+  module,
+  onSave,
+  onCancel,
+}: {
+  module: DraftModulePreview
+  onSave: (fields: { title: string; description: string }) => void
+  onCancel: () => void
+}) {
+  const [form, setForm] = useState({
+    title: module.title,
+    description: module.description,
+  })
+
+  return (
+    <div className="mt-3 space-y-3 rounded-card border border-apple/30 bg-white p-4">
+      <Field
+        label="Titre du module"
+        value={form.title}
+        rows={1}
+        onChange={(v) => setForm((c) => ({ ...c, title: v }))}
+      />
+      <Field
+        label="Description"
+        value={form.description}
+        rows={3}
+        onChange={(v) => setForm((c) => ({ ...c, description: v }))}
+      />
+      {!form.title.trim() && (
+        <div
+          role="alert"
+          className="rounded-card border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600"
+        >
+          Le titre du module est obligatoire.
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        <Button
+          size="md"
+          disabled={!form.title.trim()}
+          onClick={() =>
+            onSave({
+              title: form.title.trim(),
+              description: form.description.trim(),
+            })
+          }
+        >
+          Enregistrer localement
+        </Button>
+        <button
+          onClick={onCancel}
+          className="text-ink/60 text-sm font-medium hover:underline"
+        >
+          Annuler
+        </button>
+      </div>
     </div>
   )
 }
@@ -231,6 +509,10 @@ export function CourseBuildPanel({
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   /** A-t-on ouvert au moins une leçon ? Sert à rappeler la relecture. */
   const [reviewed, setReviewed] = useState(false)
+  /** Leçon en cours de retouche, « module:leçon ». */
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  /** Module en cours de retouche. */
+  const [editingModule, setEditingModule] = useState<number | null>(null)
 
   // Progression indicative : elle s'arrête à la dernière étape et attend la
   // réponse réelle, plutôt que d'annoncer une fin qui n'est pas advenue.
@@ -246,11 +528,14 @@ export function CourseBuildPanel({
   }, [draft.status])
 
   const { form, setForm, counts, generated } = draft
+  const preview = draft.current
 
   // Petit brouillon : la première leçon est ouverte d'emblée. Gros brouillon :
   // tout reste replié pour rester lisible.
   useEffect(() => {
     if (draft.status !== 'PREVIEW' || !generated) return
+    setEditingKey(null)
+    setEditingModule(null)
     setExpanded(counts.lessons > 0 && counts.lessons <= 3 ? new Set(['0:0']) : new Set())
     setReviewed(counts.lessons > 0 && counts.lessons <= 3)
   }, [draft.status, generated, counts.lessons])
@@ -266,10 +551,10 @@ export function CourseBuildPanel({
   }
 
   const expandAll = () => {
-    if (!generated) return
+    if (!preview) return
     setReviewed(true)
     const keys: string[] = []
-    generated.preview.modules.forEach((module, moduleIndex) =>
+    preview.modules.forEach((module, moduleIndex) =>
       module.lessons.forEach((_, lessonIndex) =>
         keys.push(`${moduleIndex}:${lessonIndex}`)
       )
@@ -279,6 +564,18 @@ export function CourseBuildPanel({
   const requestedModules = Number(form.moduleCount) || 0
   const requestedLessons = requestedModules * (Number(form.lessonsPerModule) || 0)
   const largeWithQuizzes = form.includeQuizzes && requestedLessons > 6
+
+  const closeWithGuard = () => {
+    if (
+      draft.dirty &&
+      !window.confirm(
+        'Vos modifications locales du brouillon seront perdues. Fermer quand même ?'
+      )
+    ) {
+      return
+    }
+    onClose()
+  }
 
   const apply = async () => {
     const created = await draft.apply()
@@ -296,7 +593,7 @@ export function CourseBuildPanel({
         title="Construire avec l’assistant"
         action={
           <button
-            onClick={onClose}
+            onClick={closeWithGuard}
             disabled={draft.busy}
             className="text-ink/50 text-sm font-medium hover:underline disabled:opacity-40"
           >
@@ -453,11 +750,17 @@ export function CourseBuildPanel({
       )}
 
       {/* ---------------------------------------------------------- aperçu */}
-      {draft.status === 'PREVIEW' && generated && (
+      {draft.status === 'PREVIEW' && generated && preview && (
         <div className="mt-5 space-y-4">
           <p className="text-[15px] leading-relaxed text-ink/60">
-            {generated.preview.courseSummary}
+            {preview.courseSummary}
           </p>
+
+          <div className="flex flex-wrap gap-2">
+            <Badge tone="brand">Brouillon généré</Badge>
+            {draft.dirty && <Badge tone="blue">Modifié localement</Badge>}
+            <Badge tone="warning">Sera créé en brouillon</Badge>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <Badge tone="warning">{counts.modules} modules brouillons</Badge>
@@ -503,7 +806,7 @@ export function CourseBuildPanel({
           </div>
 
           <ul className="space-y-3">
-            {generated.preview.modules.map((module, index) => (
+            {preview.modules.map((module, index) => (
               <li
                 key={`${module.title}-${index}`}
                 className="rounded-card border border-hairline bg-white p-4"
@@ -517,8 +820,29 @@ export function CourseBuildPanel({
                       {module.description}
                     </p>
                   </div>
-                  <Badge tone="warning">Brouillon</Badge>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge tone="warning">Brouillon</Badge>
+                    {editingModule !== index && (
+                      <button
+                        onClick={() => setEditingModule(index)}
+                        className="text-sm font-medium text-apple hover:underline"
+                      >
+                        Modifier
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {editingModule === index && (
+                  <ModuleEditor
+                    module={module}
+                    onSave={(fields) => {
+                      draft.updateModule(index, fields)
+                      setEditingModule(null)
+                    }}
+                    onCancel={() => setEditingModule(null)}
+                  />
+                )}
                 <ul className="mt-3 space-y-2">
                   {module.lessons.map((lesson, lessonIndex) => {
                     const key = `${index}:${lessonIndex}`
@@ -542,7 +866,31 @@ export function CourseBuildPanel({
                             {lesson.exercises?.length ?? 0} exercice(s)
                           </span>
                         </button>
-                        {open && <LessonDetail lesson={lesson} />}
+                        {open &&
+                          (editingKey === key ? (
+                            <LessonEditor
+                              lesson={lesson}
+                              onSave={(updated) => {
+                                draft.updateLesson(index, lessonIndex, updated)
+                                setEditingKey(null)
+                              }}
+                              onCancel={() => setEditingKey(null)}
+                              onRestore={() => {
+                                draft.restoreLesson(index, lessonIndex)
+                                setEditingKey(null)
+                              }}
+                            />
+                          ) : (
+                            <>
+                              <LessonDetail lesson={lesson} />
+                              <button
+                                onClick={() => setEditingKey(key)}
+                                className="mt-2 text-sm font-medium text-apple hover:underline"
+                              >
+                                Modifier cette leçon
+                              </button>
+                            </>
+                          ))}
                       </li>
                     )
                   })}

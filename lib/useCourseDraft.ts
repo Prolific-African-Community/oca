@@ -90,14 +90,28 @@ export function useCourseDraft(courseId: string) {
   const [form, setForm] = useState<DraftForm>(INITIAL_FORM)
   const [status, setStatus] = useState<BuildStatus>('CONFIGURING')
   const [generated, setGenerated] = useState<GeneratedDraft | null>(null)
+  /**
+   * Copie retouchable du brouillon, vivant **uniquement dans le navigateur**
+   * jusqu'à l'application. `generated` conserve la version du fournisseur pour
+   * pouvoir revenir en arrière leçon par leçon.
+   */
+  const [edited, setEdited] = useState<DraftPreview | null>(null)
   const [error, setError] = useState('')
   const [failureReason, setFailureReason] = useState('')
 
   /** Empêche une double soumission, quelle que soit la vitesse du clic. */
   const inFlight = useRef(false)
 
+  /** Le brouillon effectivement affiché et appliqué. */
+  const current = edited ?? generated?.preview ?? null
+
+  const dirty = useMemo(() => {
+    if (!edited || !generated) return false
+    return JSON.stringify(edited) !== JSON.stringify(generated.preview)
+  }, [edited, generated])
+
   const counts = useMemo(() => {
-    const modules = generated?.preview.modules ?? []
+    const modules = current?.modules ?? []
     const lessons = modules.flatMap((m) => m.lessons)
     const quizzes = modules.flatMap((m) => m.quizzes)
 
@@ -115,7 +129,7 @@ export function useCourseDraft(courseId: string) {
               lessons.reduce((n, l) => n + l.content.length, 0) / lessons.length
             ),
     }
-  }, [generated])
+  }, [current])
 
   const generate = useCallback(async () => {
     if (inFlight.current) return
@@ -146,6 +160,7 @@ export function useCourseDraft(courseId: string) {
       }
 
       setGenerated(data)
+      setEdited(JSON.parse(JSON.stringify(data.preview)))
       setStatus('PREVIEW')
     } catch (caught: any) {
       setError(caught.message || 'Génération impossible')
@@ -175,11 +190,24 @@ export function useCourseDraft(courseId: string) {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ aiGenerationId: generated.id }),
+          // Le brouillon retouché n'est transmis que s'il diffère réellement.
+        body: JSON.stringify(
+          dirty && edited
+            ? { aiGenerationId: generated.id, editedDraft: edited }
+            : { aiGenerationId: generated.id }
+        ),
         }
       )
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.message || 'Application impossible')
+      if (!response.ok) {
+        // Le serveur détaille les champs bloquants : on les remonte tels quels.
+        const detail = Array.isArray(data.issues) ? data.issues.join(' ') : ''
+        throw new Error(
+          [data.message || 'Application impossible', detail]
+            .filter(Boolean)
+            .join(' ')
+        )
+      }
 
       setStatus('APPLIED')
       return data.created ?? null
@@ -190,10 +218,59 @@ export function useCourseDraft(courseId: string) {
     } finally {
       inFlight.current = false
     }
-  }, [courseId, generated])
+  }, [courseId, dirty, edited, generated])
+
+  /** Remplace une leçon dans la copie locale. */
+  const updateLesson = useCallback(
+    (
+      moduleIndex: number,
+      lessonIndex: number,
+      lesson: DraftLessonPreview
+    ) => {
+      setEdited((currentDraft) => {
+        if (!currentDraft) return currentDraft
+        const next = JSON.parse(JSON.stringify(currentDraft)) as DraftPreview
+        next.modules[moduleIndex].lessons[lessonIndex] = lesson
+        return next
+      })
+    },
+    []
+  )
+
+  /** Remplace les champs d'un module dans la copie locale. */
+  const updateModule = useCallback(
+    (moduleIndex: number, fields: { title: string; description: string }) => {
+      setEdited((currentDraft) => {
+        if (!currentDraft) return currentDraft
+        const next = JSON.parse(JSON.stringify(currentDraft)) as DraftPreview
+        next.modules[moduleIndex].title = fields.title
+        next.modules[moduleIndex].description = fields.description
+        return next
+      })
+    },
+    []
+  )
+
+  /** Rétablit une leçon dans sa version générée. */
+  const restoreLesson = useCallback(
+    (moduleIndex: number, lessonIndex: number) => {
+      setEdited((currentDraft) => {
+        if (!currentDraft || !generated) return currentDraft
+        const next = JSON.parse(JSON.stringify(currentDraft)) as DraftPreview
+        next.modules[moduleIndex].lessons[lessonIndex] = JSON.parse(
+          JSON.stringify(
+            generated.preview.modules[moduleIndex].lessons[lessonIndex]
+          )
+        )
+        return next
+      })
+    },
+    [generated]
+  )
 
   const reset = useCallback(() => {
     setGenerated(null)
+    setEdited(null)
     setError('')
     setFailureReason('')
     setStatus('CONFIGURING')
@@ -204,6 +281,12 @@ export function useCourseDraft(courseId: string) {
     setForm,
     status,
     generated,
+    /** Brouillon affiché : la copie locale dès qu'elle existe. */
+    current,
+    dirty,
+    updateLesson,
+    updateModule,
+    restoreLesson,
     counts,
     error,
     failureReason,
