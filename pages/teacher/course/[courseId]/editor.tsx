@@ -115,6 +115,56 @@ export default function CourseEditorPage() {
     }
   }
 
+  /**
+   * Suppression. Même protocole que la publication : un refus
+   * `CONFIRMATION_REQUIRED` remonte le détail de ce qui serait détruit au lieu
+   * de passer pour une erreur.
+   */
+  const remove = async (
+    url: string,
+    key: string,
+    label: string,
+    confirm?: boolean
+  ): Promise<PublishResult> => {
+    setBusy(key)
+    try {
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(confirm ? { confirm: true } : {}),
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        if (data.code === 'CONFIRMATION_REQUIRED') {
+          return { needsConfirm: true, message: data.message }
+        }
+        throw new Error(data.message || 'Suppression impossible')
+      }
+
+      // Le rechargement resélectionne une leçon disponible, ou aucune.
+      await load()
+      toast({
+        title: label,
+        description:
+          data.impact && data.impact.hiddenQuizCount > 0
+            ? `${data.impact.hiddenQuizCount} quiz archivé(s) : masqué(s) aux étudiants, conservé(s) dans vos quiz.`
+            : undefined,
+        tone: 'success',
+      })
+      return { needsConfirm: false }
+    } catch (err: any) {
+      toast({
+        title: 'Suppression impossible',
+        description: err.message,
+        tone: 'error',
+      })
+      return { needsConfirm: false }
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <AppShell
       role="teacher"
@@ -169,6 +219,14 @@ export default function CourseEditorPage() {
                       label
                     )
                   }
+                  onDeleteModule={(confirm) =>
+                    remove(
+                      `/api/teacher/modules/${module.id}`,
+                      `delete:${module.id}`,
+                      'Module supprimé',
+                      confirm
+                    )
+                  }
                 />
               ))}
             </div>
@@ -195,6 +253,14 @@ export default function CourseEditorPage() {
                       confirm ? { published, confirm: true } : { published },
                       `lesson:${selectedLesson.id}`,
                       published ? 'Leçon publiée' : 'Leçon dépubliée'
+                    )
+                  }
+                  onDelete={(confirm) =>
+                    remove(
+                      `/api/teacher/lessons/${selectedLesson.id}`,
+                      `lesson:${selectedLesson.id}`,
+                      'Leçon supprimée',
+                      confirm
                     )
                   }
                 />
@@ -296,6 +362,7 @@ function ModuleNav({
   busy,
   onSelect,
   onPublishModule,
+  onDeleteModule,
 }: {
   module: EditorModule
   selectedId: string | null
@@ -306,6 +373,7 @@ function ModuleNav({
     key: string,
     label: string
   ) => Promise<PublishResult>
+  onDeleteModule: (confirm?: boolean) => Promise<PublishResult>
 }) {
   const published = module.status === 'PUBLISHED'
   const draftLessons = module.lessons.filter((l) => l.status === 'DRAFT')
@@ -314,6 +382,7 @@ function ModuleNav({
   ).length
 
   const [bulkWarning, setBulkWarning] = useState<string | null>(null)
+  const [deleteWarning, setDeleteWarning] = useState<string | null>(null)
 
   const askBulk = async () => {
     const result = await onPublishModule(
@@ -430,6 +499,45 @@ function ModuleNav({
           )}
         </>
       )}
+
+      {/* Suppression du module : conséquences annoncées avant tout effet. */}
+      <div className="mt-3">
+        {deleteWarning ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+            <p className="text-sm text-red-700">{deleteWarning}</p>
+            <div className="mt-2.5 flex items-center gap-3">
+              <Button
+                size="md"
+                loading={busy === `delete:${module.id}`}
+                onClick={async () => {
+                  await onDeleteModule(true)
+                  setDeleteWarning(null)
+                }}
+              >
+                Oui, supprimer définitivement
+              </Button>
+              <button
+                onClick={() => setDeleteWarning(null)}
+                className="text-ink/60 text-sm font-medium hover:underline"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={async () => {
+              const result = await onDeleteModule()
+              if (result.needsConfirm) {
+                setDeleteWarning(result.message ?? 'Supprimer ce module ?')
+              }
+            }}
+            className="text-sm font-medium text-red-500 hover:underline"
+          >
+            Supprimer le module
+          </button>
+        )}
+      </div>
 
       {/* Seule action groupée autorisée, et jamais sans confirmation. */}
       {draftLessons.length > 0 && (

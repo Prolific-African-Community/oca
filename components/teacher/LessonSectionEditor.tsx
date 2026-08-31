@@ -312,6 +312,7 @@ export function LessonSectionEditor({
   onSaved,
   onToast,
   onPublish,
+  onDelete,
 }: {
   lesson: EditorLesson
   moduleTitle: string
@@ -320,6 +321,9 @@ export function LessonSectionEditor({
   onToast: (title: string, description?: string, error?: boolean) => void
   onPublish: (
     published: boolean,
+    confirm?: boolean
+  ) => Promise<{ needsConfirm: boolean; message?: string } | void>
+  onDelete: (
     confirm?: boolean
   ) => Promise<{ needsConfirm: boolean; message?: string } | void>
 }) {
@@ -341,6 +345,10 @@ export function LessonSectionEditor({
   // Publication d'une lecon signalee comme faible : confirmation explicite.
   const [publishWarning, setPublishWarning] = useState<string | null>(null)
   const [showStudentPreview, setShowStudentPreview] = useState(false)
+
+  // Suppression : jamais en un clic. On demande, puis on confirme.
+  const [deleteWarning, setDeleteWarning] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const isStructured = lesson.structuredContent !== null
   const published = lesson.status === 'PUBLISHED'
@@ -569,7 +577,52 @@ export function LessonSectionEditor({
           >
             {showStudentPreview ? 'Masquer' : 'Voir'} l’aperçu étudiant
           </button>
+
+          {!deleteWarning && (
+            <button
+              onClick={async () => {
+                setDeleting(true)
+                const result = await onDelete()
+                setDeleting(false)
+                // Une leçon sans conséquence est supprimée directement ;
+                // sinon le serveur renvoie ce qui serait détruit.
+                if (result && result.needsConfirm) {
+                  setDeleteWarning(result.message ?? 'Supprimer cette leçon ?')
+                }
+              }}
+              disabled={deleting}
+              className="text-sm font-medium text-red-500 hover:underline disabled:opacity-50"
+            >
+              Supprimer la leçon
+            </button>
+          )}
         </div>
+
+        {deleteWarning && (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3">
+            <p className="text-sm text-red-700">{deleteWarning}</p>
+            <div className="mt-2.5 flex items-center gap-3">
+              <Button
+                size="md"
+                loading={deleting}
+                onClick={async () => {
+                  setDeleting(true)
+                  await onDelete(true)
+                  setDeleting(false)
+                  setDeleteWarning(null)
+                }}
+              >
+                Oui, supprimer définitivement
+              </Button>
+              <button
+                onClick={() => setDeleteWarning(null)}
+                className="text-ink/60 text-sm font-medium hover:underline"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        )}
 
         {publishWarning && (
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
