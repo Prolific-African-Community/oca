@@ -122,6 +122,55 @@ and after any test session:
 npx tsx scripts/check-demo-isolation.ts
 ```
 
+## Database backup
+
+The repository protects the code. It does not protect the data. Courses,
+modules, lessons, audit logs and `AIGeneration` records exist only in
+PostgreSQL, and the product has no content versioning: a deletion or an
+overwrite is final. Take a backup before any run that deletes or rewrites
+content.
+
+```bash
+npm run db:backup
+```
+
+The script reads `DIRECT_URL` (preferred, non-pooled) or `DATABASE_URL` from
+`.env`, and writes `backups/oca-YYYYMMDD-HHMMSS.dump` in PostgreSQL custom
+format. The connection string is never printed and is passed to `pg_dump`
+through `PGHOST` / `PGPASSWORD` environment variables rather than command-line
+arguments, so the password does not appear in the process list.
+
+`pg_dump` must be installed and at least as recent as the server (currently
+PostgreSQL 18). If it is missing, the script explains the alternatives rather
+than failing silently:
+
+- Neon console: `Project > Backups`, or create a database branch. This needs no
+  local tooling and is the fastest option.
+- Install the PostgreSQL client tools (on Windows, the installer allows
+  selecting *Command Line Tools* only).
+- Run `pg_dump` from a `postgres:18` Docker image.
+
+### Restoring
+
+Restore into a **new, empty database first** and inspect it. Never restore
+straight over a live database.
+
+```bash
+createdb oca_restore
+pg_restore --dbname=oca_restore --no-owner --no-privileges backups/oca-YYYYMMDD-HHMMSS.dump
+```
+
+On Neon, create a new branch or database, restore into it, verify the data, and
+only then point `DATABASE_URL` at it.
+
+### Handling backup files
+
+A dump contains every production record, including password hashes and audit
+entries. Treat it as a secret: `backups/`, `*.dump` and `*.sql.gz` are
+gitignored, and backup files must never be committed, attached to an issue, or
+uploaded to a third-party service. Store them encrypted, and delete copies you
+no longer need.
+
 ## Verification
 
 ```bash
