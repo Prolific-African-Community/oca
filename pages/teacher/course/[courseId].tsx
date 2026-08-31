@@ -13,7 +13,9 @@ import { Reveal } from '../../../components/anim/Reveal'
 import { Drawer } from '../../../components/overlay/Drawer'
 import { useToast } from '../../../components/overlay/Toast'
 import { QuizPanel } from '../../../components/teacher/QuizPanel'
+import { DraftReviewPanel } from '../../../components/teacher/DraftReviewPanel'
 import { AnalyticsPanel } from '../../../components/teacher/AnalyticsPanel'
+import { CourseDraftBuilder } from '../../../components/teacher/CourseDraftBuilder'
 import {
   BookIcon,
   LayersIcon,
@@ -27,6 +29,7 @@ interface Lesson {
   id: string
   title: string
   content: string | null
+  contentJson: unknown | null
   order: number
   estimatedMinutes: number | null
   status: Status
@@ -125,6 +128,8 @@ export default function TeacherCoursePage() {
   const [course, setCourse] = useState<CourseDetail | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [editor, setEditor] = useState<Editor | null>(null)
+  const [courseDraftOpen, setCourseDraftOpen] = useState(false)
+  const [contentVersion, setContentVersion] = useState(0)
 
   const load = useCallback(() => {
     if (typeof courseId !== 'string') return
@@ -161,12 +166,26 @@ export default function TeacherCoursePage() {
       }
       action={
         course ? (
-          <button
-            onClick={() => setEditor({ kind: 'module', mode: 'create' })}
-            className={buttonClasses('primary', 'md', 'hidden sm:inline-flex')}
-          >
-            <PlusIcon size={18} /> Ajouter un module
-          </button>
+          <div className="hidden items-center gap-2 sm:flex">
+            <Link
+              href={`/teacher/course/${courseId}/editor`}
+              className={buttonClasses('secondary', 'md', 'no-underline')}
+            >
+              Ouvrir l’éditeur de cours
+            </Link>
+            <button
+              onClick={() => setCourseDraftOpen(true)}
+              className={buttonClasses('secondary', 'md')}
+            >
+              Générer un cours brouillon
+            </button>
+            <button
+              onClick={() => setEditor({ kind: 'module', mode: 'create' })}
+              className={buttonClasses('primary', 'md')}
+            >
+              <PlusIcon size={18} /> Ajouter un module
+            </button>
+          </div>
         ) : null
       }
     >
@@ -206,8 +225,49 @@ export default function TeacherCoursePage() {
                   {course.description}
                 </p>
               )}
+              <button
+                onClick={() => setCourseDraftOpen(true)}
+                className={buttonClasses(
+                  'secondary',
+                  'md',
+                  'mt-4 w-full sm:hidden'
+                )}
+              >
+                Générer un cours brouillon
+              </button>
             </Card>
           </Reveal>
+
+          <div className="mt-5">
+            <DraftReviewPanel
+              key={`drafts-${contentVersion}`}
+              courseId={typeof courseId === 'string' ? courseId : ''}
+              onChanged={() => {
+                load()
+                setContentVersion((v) => v + 1)
+              }}
+              onToast={(title, description, isError) =>
+                toast({
+                  title,
+                  description,
+                  tone: isError ? 'error' : 'success',
+                })
+              }
+              onEditLesson={(moduleId, lessonId) => {
+                const module = course.modules.find((m) => m.id === moduleId)
+                const lesson = module?.lessons.find((l) => l.id === lessonId)
+                if (module && lesson) {
+                  setEditor({
+                    kind: 'lesson',
+                    mode: 'edit',
+                    moduleId: module.id,
+                    moduleTitle: module.title,
+                    lesson,
+                  })
+                }
+              }}
+            />
+          </div>
 
           <div className="mt-5">
             <AnalyticsPanel
@@ -217,6 +277,7 @@ export default function TeacherCoursePage() {
 
           <div className="mt-5">
             <QuizPanel
+              key={contentVersion}
               courseId={typeof courseId === 'string' ? courseId : ''}
               scopeModules={course.modules.map((module) => ({
                 id: module.id,
@@ -316,6 +377,9 @@ export default function TeacherCoursePage() {
                             <Badge tone={STATUS_TONES[l.status]}>
                               {STATUS_LABELS[l.status]}
                             </Badge>
+                            {Boolean(l.contentJson) && (
+                              <Badge tone="brand">Structuré</Badge>
+                            )}
                             <button
                               onClick={() =>
                                 setEditor({
@@ -370,6 +434,25 @@ export default function TeacherCoursePage() {
           toast({ title: 'Échec', description: message, tone: 'error' })
         }
       />
+      {course && (
+        <CourseDraftBuilder
+          open={courseDraftOpen}
+          courseId={typeof courseId === 'string' ? courseId : ''}
+          hasModules={course.modules.length > 0}
+          onClose={() => setCourseDraftOpen(false)}
+          onApplied={() => {
+            load()
+            setContentVersion((version) => version + 1)
+          }}
+          onToast={(title, description, isError) =>
+            toast({
+              title,
+              description,
+              tone: isError ? 'error' : 'success',
+            })
+          }
+        />
+      )}
     </AppShell>
   )
 }
@@ -531,6 +614,13 @@ function ContentEditor({
           </label>
         ) : (
           <>
+            {editor.mode === 'edit' && Boolean(editor.lesson.contentJson) && (
+              <div className="text-ink/65 rounded-card border border-apple/10 bg-oca-tint px-4 py-3 text-sm">
+                Cette leçon possède un contenu structuré. Modifier le texte
+                ci-dessous remplacera son affichage structuré par ce texte afin
+                que votre modification soit immédiatement visible.
+              </div>
+            )}
             <label className="block">
               <span className="mb-2 block text-sm font-medium text-ink/70">
                 Contenu

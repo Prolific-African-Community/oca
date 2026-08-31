@@ -456,6 +456,9 @@ model Lesson {
   title            String
   /// Contenu pédagogique. Format libre à ce stade ; à structurer avant l'IA.
   content          String?
+  /// Structure pédagogique optionnelle. `content` reste le repli texte et
+  /// l'export rétrocompatible ; les lecteurs valident ce JSON avant usage.
+  contentJson      Json?
   order            Int           @default(0)
   /// Durée estimée, en minutes.
   estimatedMinutes Int?

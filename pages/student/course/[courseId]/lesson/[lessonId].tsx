@@ -10,6 +10,8 @@ import { Skeleton } from '../../../../../components/ui/Skeleton'
 import { Button, buttonClasses } from '../../../../../components/ui/Button'
 import { Reveal } from '../../../../../components/anim/Reveal'
 import { BookIcon, ChevronRightIcon } from '../../../../../components/ui/icons'
+import { StructuredLesson } from '../../../../../components/lesson/StructuredLesson'
+import type { StructuredLessonContent } from '../../../../../lib/lessonContent'
 
 type ProgressStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED'
 
@@ -17,6 +19,7 @@ interface LessonView {
   id: string
   title: string
   content: string | null
+  contentJson: StructuredLessonContent | null
   estimatedMinutes: number | null
   module: { id: string; title: string }
   course: { id: string; title: string; code: string }
@@ -115,8 +118,10 @@ export default function StudentLessonPage() {
                 {completed && <Badge tone="success">Terminée</Badge>}
               </div>
 
-              {lesson.content ? (
-                // Contenu en texte simple à ce stade : on préserve les retours à la ligne.
+              {lesson.contentJson ? (
+                <StructuredLesson content={lesson.contentJson} />
+              ) : lesson.content ? (
+                // Rétrocompatibilité : les anciennes leçons restent en texte simple.
                 <p className="mt-5 whitespace-pre-wrap text-[16px] leading-relaxed text-ink/75">
                   {lesson.content}
                 </p>
