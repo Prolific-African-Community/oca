@@ -179,13 +179,13 @@ export default function TeacherCoursePage() {
           <div className="hidden items-center gap-2 sm:flex">
             <button
               onClick={() => setCourseDraftOpen(true)}
-              className={buttonClasses('secondary', 'md')}
+              className={buttonClasses('secondary', 'md', 'hidden xl:inline-flex')}
             >
-              Générer un cours brouillon
+              Générer un brouillon
             </button>
             <button
               onClick={() => setEditor({ kind: 'module', mode: 'create' })}
-              className={buttonClasses('secondary', 'md')}
+              className={buttonClasses('secondary', 'md', 'hidden xl:inline-flex')}
             >
               <PlusIcon size={18} /> Ajouter un module
             </button>
@@ -241,10 +241,15 @@ export default function TeacherCoursePage() {
                 Course Studio.
               </p>
 
-              <div className="mt-4 flex flex-col gap-2 sm:hidden">
+              {/* Reprises ici tant que l'en-tête ne peut pas les afficher. */}
+              <div className="mt-4 flex flex-wrap gap-2 xl:hidden">
                 <Link
                   href={studioHref()}
-                  className={buttonClasses('primary', 'md', 'no-underline')}
+                  className={buttonClasses(
+                    'primary',
+                    'md',
+                    'no-underline sm:hidden'
+                  )}
                 >
                   Ouvrir le Course Studio
                 </Link>
@@ -252,7 +257,13 @@ export default function TeacherCoursePage() {
                   onClick={() => setCourseDraftOpen(true)}
                   className={buttonClasses('secondary', 'md')}
                 >
-                  Générer un cours brouillon
+                  Générer un brouillon
+                </button>
+                <button
+                  onClick={() => setEditor({ kind: 'module', mode: 'create' })}
+                  className={buttonClasses('secondary', 'md')}
+                >
+                  <PlusIcon size={18} /> Ajouter un module
                 </button>
               </div>
             </Card>
