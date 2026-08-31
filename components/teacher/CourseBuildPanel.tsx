@@ -4,7 +4,13 @@ import { Badge } from '../ui/Badge'
 import { Button, buttonClasses } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { SparkIcon } from '../ui/icons'
+import { StructuredLesson } from '../lesson/StructuredLesson'
+import { structuredLessonContentFromDraft } from '../../lib/lessonContent'
 import { useCourseDraft } from '../../lib/useCourseDraft'
+import type {
+  DraftLessonPreview,
+  DraftModulePreview,
+} from '../../lib/useCourseDraft'
 
 /**
  * Construction assistée d'un cours, à l'intérieur du Course Studio.
@@ -74,6 +80,132 @@ function StageList({ active }: { active: number }) {
   )
 }
 
+/**
+ * Détail d'une leçon du brouillon, tel qu'il sera enregistré.
+ *
+ * Le rendu passe par `structuredLessonContentFromDraft`, la fonction employée
+ * à l'application : ce que l'enseignant lit ici est exactement ce qui sera
+ * créé, et non une mise en forme approchée. Le composant d'affichage est
+ * celui de la page étudiante, pour la même raison.
+ */
+function LessonDetail({ lesson }: { lesson: DraftLessonPreview }) {
+  const [copied, setCopied] = useState<'ok' | 'ko' | null>(null)
+
+  const content = structuredLessonContentFromDraft({
+    title: lesson.title,
+    estimatedMinutes: lesson.estimatedMinutes,
+    content: lesson.content,
+    keyConcepts: lesson.keyConcepts ?? [],
+    recap: lesson.recap ?? '',
+    practicalExample: lesson.practicalExample ?? '',
+    exercises: lesson.exercises ?? [],
+  })
+
+  const copy = async () => {
+    const text = [
+      lesson.title,
+      content.introduction,
+      content.keyConcepts.join('\n'),
+      content.explanation,
+      content.practicalExample,
+      content.recap,
+      content.exercises.join('\n'),
+    ]
+      .filter((part) => part && part.trim())
+      .join('\n\n')
+
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied('ok')
+    } catch {
+      // Le presse-papiers peut être refusé par le navigateur : on le dit.
+      setCopied('ko')
+    }
+  }
+
+  const missing = [
+    !content.introduction.trim() && 'introduction',
+    content.keyConcepts.length === 0 && 'concepts clés',
+    !content.explanation.trim() && 'explication',
+    !content.practicalExample.trim() && 'exemple pratique',
+    !content.recap.trim() && 'récapitulatif',
+    content.exercises.length === 0 && 'exercices',
+  ].filter(Boolean) as string[]
+
+  return (
+    <div className="mt-3 rounded-card border border-hairline bg-cloud/40 p-4">
+      {missing.length > 0 && (
+        <p className="mb-2 text-sm text-amber-600">
+          Sections absentes : {missing.join(', ')}.
+        </p>
+      )}
+
+      <StructuredLesson content={content} />
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          onClick={copy}
+          className="text-sm font-medium text-apple hover:underline"
+        >
+          Copier le texte de la leçon
+        </button>
+        {copied === 'ok' && (
+          <span className="text-sm text-emerald-700">Copié.</span>
+        )}
+        {copied === 'ko' && (
+          <span className="text-sm text-amber-600">
+            Copie refusée par le navigateur.
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Aperçu des quiz d'un module : intitulés, questions et bonnes réponses. */
+function QuizDetail({ module }: { module: DraftModulePreview }) {
+  return (
+    <div className="mt-3 space-y-3">
+      {module.quizzes.map((quiz, index) => (
+        <div
+          key={`${quiz.title}-${index}`}
+          className="rounded-card border border-hairline bg-white p-4"
+        >
+          <p className="text-[15px] font-medium text-ink">{quiz.title}</p>
+          <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-ink/70">
+            {quiz.questions.map((question, questionIndex) => (
+              <li key={questionIndex}>
+                <p>{question.prompt}</p>
+                {question.options?.length > 0 && (
+                  <ul className="mt-1 space-y-0.5 text-ink/55">
+                    {question.options.map((option, optionIndex) => (
+                      <li key={optionIndex}>
+                        {Array.isArray(question.correctAnswer) &&
+                        question.correctAnswer.includes(optionIndex)
+                          ? '✓ '
+                          : '· '}
+                        {option}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {typeof question.correctAnswer === 'boolean' && (
+                  <p className="mt-1 text-ink/55">
+                    Réponse attendue : {question.correctAnswer ? 'vrai' : 'faux'}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+          <p className="text-ink/40 mt-3 text-xs">
+            Retour d’apprentissage, jamais une note officielle.
+          </p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function CourseBuildPanel({
   courseId,
   hasModules,
@@ -95,6 +227,11 @@ export function CourseBuildPanel({
   const draft = useCourseDraft(courseId)
   const [stage, setStage] = useState(0)
 
+  /** Leçons dépliées, par « module:leçon ». */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  /** A-t-on ouvert au moins une leçon ? Sert à rappeler la relecture. */
+  const [reviewed, setReviewed] = useState(false)
+
   // Progression indicative : elle s'arrête à la dernière étape et attend la
   // réponse réelle, plutôt que d'annoncer une fin qui n'est pas advenue.
   useEffect(() => {
@@ -109,6 +246,36 @@ export function CourseBuildPanel({
   }, [draft.status])
 
   const { form, setForm, counts, generated } = draft
+
+  // Petit brouillon : la première leçon est ouverte d'emblée. Gros brouillon :
+  // tout reste replié pour rester lisible.
+  useEffect(() => {
+    if (draft.status !== 'PREVIEW' || !generated) return
+    setExpanded(counts.lessons > 0 && counts.lessons <= 3 ? new Set(['0:0']) : new Set())
+    setReviewed(counts.lessons > 0 && counts.lessons <= 3)
+  }, [draft.status, generated, counts.lessons])
+
+  const toggle = (key: string) => {
+    setReviewed(true)
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const expandAll = () => {
+    if (!generated) return
+    setReviewed(true)
+    const keys: string[] = []
+    generated.preview.modules.forEach((module, moduleIndex) =>
+      module.lessons.forEach((_, lessonIndex) =>
+        keys.push(`${moduleIndex}:${lessonIndex}`)
+      )
+    )
+    setExpanded(new Set(keys))
+  }
   const requestedModules = Number(form.moduleCount) || 0
   const requestedLessons = requestedModules * (Number(form.lessonsPerModule) || 0)
   const largeWithQuizzes = form.includeQuizzes && requestedLessons > 6
@@ -319,6 +486,22 @@ export function CourseBuildPanel({
               </div>
             ))}
 
+          <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-3">
+            <span className="text-ink/50 text-sm">Contenu détaillé :</span>
+            <button
+              onClick={expandAll}
+              className="text-sm font-medium text-apple hover:underline"
+            >
+              Tout déplier
+            </button>
+            <button
+              onClick={() => setExpanded(new Set())}
+              className="text-ink/50 text-sm font-medium hover:underline"
+            >
+              Tout replier
+            </button>
+          </div>
+
           <ul className="space-y-3">
             {generated.preview.modules.map((module, index) => (
               <li
@@ -336,28 +519,61 @@ export function CourseBuildPanel({
                   </div>
                   <Badge tone="warning">Brouillon</Badge>
                 </div>
-                <ul className="mt-3 space-y-1 text-sm text-ink/60">
-                  {module.lessons.map((lesson, lessonIndex) => (
-                    <li key={`${lesson.title}-${lessonIndex}`}>
-                      • {lesson.title} · {lesson.estimatedMinutes} min ·{' '}
-                      {lesson.keyConcepts?.length ?? 0} concept(s) ·{' '}
-                      {lesson.exercises?.length ?? 0} exercice(s)
-                    </li>
-                  ))}
+                <ul className="mt-3 space-y-2">
+                  {module.lessons.map((lesson, lessonIndex) => {
+                    const key = `${index}:${lessonIndex}`
+                    const open = expanded.has(key)
+                    return (
+                      <li key={`${lesson.title}-${lessonIndex}`}>
+                        <button
+                          onClick={() => toggle(key)}
+                          aria-expanded={open}
+                          className="flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left text-sm text-ink/70 transition-colors hover:bg-cloud"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="text-ink/35 mt-0.5 shrink-0"
+                          >
+                            {open ? '▾' : '▸'}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            {lesson.title} · {lesson.estimatedMinutes} min ·{' '}
+                            {lesson.keyConcepts?.length ?? 0} concept(s) ·{' '}
+                            {lesson.exercises?.length ?? 0} exercice(s)
+                          </span>
+                        </button>
+                        {open && <LessonDetail lesson={lesson} />}
+                      </li>
+                    )
+                  })}
                 </ul>
                 {module.quizzes.length > 0 && (
-                  <p className="mt-3 text-xs font-medium text-apple">
-                    {module.quizzes.length} quiz ·{' '}
-                    {module.quizzes.reduce(
-                      (sum, quiz) => sum + quiz.questions.length,
-                      0
-                    )}{' '}
-                    questions
-                  </p>
+                  <>
+                    <p className="mt-3 text-xs font-medium text-apple">
+                      {module.quizzes.length} quiz ·{' '}
+                      {module.quizzes.reduce(
+                        (sum, quiz) => sum + quiz.questions.length,
+                        0
+                      )}{' '}
+                      questions
+                    </p>
+                    <QuizDetail module={module} />
+                  </>
                 )}
               </li>
             ))}
           </ul>
+
+          <div className="rounded-card border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Relisez le contenu généré avant d’appliquer. Les modules et leçons
+            seront créés en brouillon, modifiables ensuite section par section
+            dans le Studio.
+            {!reviewed && (
+              <span className="mt-1 block font-medium">
+                Vous n’avez encore ouvert aucune leçon.
+              </span>
+            )}
+          </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={apply}>Appliquer le brouillon</Button>

@@ -15,7 +15,18 @@ export interface DraftLessonPreview {
   estimatedMinutes: number
   keyConcepts?: string[]
   exercises?: string[]
+  recap?: string
+  practicalExample?: string
   content: string
+}
+
+export interface DraftQuestionPreview {
+  type: 'MULTIPLE_CHOICE' | 'TRUE_FALSE'
+  prompt: string
+  options: string[]
+  correctAnswer: number[] | boolean
+  explanation: string
+  points: number
 }
 
 export interface DraftModulePreview {
@@ -23,7 +34,11 @@ export interface DraftModulePreview {
   description: string
   learningObjectives: string[]
   lessons: DraftLessonPreview[]
-  quizzes: Array<{ title: string; questions: unknown[] }>
+  quizzes: Array<{
+    title: string
+    description?: string
+    questions: DraftQuestionPreview[]
+  }>
 }
 
 export interface DraftPreview {
