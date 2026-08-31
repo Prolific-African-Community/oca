@@ -15,7 +15,6 @@ import { useToast } from '../../../components/overlay/Toast'
 import { QuizPanel } from '../../../components/teacher/QuizPanel'
 import { DraftReviewPanel } from '../../../components/teacher/DraftReviewPanel'
 import { AnalyticsPanel } from '../../../components/teacher/AnalyticsPanel'
-import { CourseDraftBuilder } from '../../../components/teacher/CourseDraftBuilder'
 import {
   BookIcon,
   LayersIcon,
@@ -126,7 +125,6 @@ export default function TeacherCoursePage() {
   const [course, setCourse] = useState<CourseDetail | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [editor, setEditor] = useState<Editor | null>(null)
-  const [courseDraftOpen, setCourseDraftOpen] = useState(false)
   const [contentVersion, setContentVersion] = useState(0)
 
   const load = useCallback(() => {
@@ -177,12 +175,16 @@ export default function TeacherCoursePage() {
       action={
         course ? (
           <div className="hidden items-center gap-2 sm:flex">
-            <button
-              onClick={() => setCourseDraftOpen(true)}
-              className={buttonClasses('secondary', 'md', 'hidden xl:inline-flex')}
+            <Link
+              href={`${studioHref()}?build=ai`}
+              className={buttonClasses(
+                'secondary',
+                'md',
+                'no-underline hidden xl:inline-flex'
+              )}
             >
               Générer un brouillon
-            </button>
+            </Link>
             <button
               onClick={() => setEditor({ kind: 'module', mode: 'create' })}
               className={buttonClasses('secondary', 'md', 'hidden xl:inline-flex')}
@@ -253,12 +255,12 @@ export default function TeacherCoursePage() {
                 >
                   Ouvrir le Course Studio
                 </Link>
-                <button
-                  onClick={() => setCourseDraftOpen(true)}
-                  className={buttonClasses('secondary', 'md')}
+                <Link
+                  href={`${studioHref()}?build=ai`}
+                  className={buttonClasses('secondary', 'md', 'no-underline')}
                 >
                   Générer un brouillon
-                </button>
+                </Link>
                 <button
                   onClick={() => setEditor({ kind: 'module', mode: 'create' })}
                   className={buttonClasses('secondary', 'md')}
@@ -439,25 +441,6 @@ export default function TeacherCoursePage() {
           toast({ title: 'Échec', description: message, tone: 'error' })
         }
       />
-      {course && (
-        <CourseDraftBuilder
-          open={courseDraftOpen}
-          courseId={typeof courseId === 'string' ? courseId : ''}
-          hasModules={course.modules.length > 0}
-          onClose={() => setCourseDraftOpen(false)}
-          onApplied={() => {
-            load()
-            setContentVersion((version) => version + 1)
-          }}
-          onToast={(title, description, isError) =>
-            toast({
-              title,
-              description,
-              tone: isError ? 'error' : 'success',
-            })
-          }
-        />
-      )}
     </AppShell>
   )
 }

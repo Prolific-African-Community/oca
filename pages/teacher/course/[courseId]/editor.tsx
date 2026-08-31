@@ -1,13 +1,14 @@
 import { requireAssignedCoursePage } from '../../../../lib/pageGuard'
 import { resolveInitialSelection } from '../../../../lib/editorSelection'
 import { MetadataPanel } from '../../../../components/teacher/MetadataPanel'
+import { CourseBuildPanel } from '../../../../components/teacher/CourseBuildPanel'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { AppShell } from '../../../../components/app/AppShell'
 import { Card, CardHeader } from '../../../../components/ui/Card'
 import { Badge } from '../../../../components/ui/Badge'
-import { Button } from '../../../../components/ui/Button'
+import { Button, buttonClasses } from '../../../../components/ui/Button'
 import { EmptyState } from '../../../../components/ui/EmptyState'
 import { Skeleton } from '../../../../components/ui/Skeleton'
 import { useToast } from '../../../../components/overlay/Toast'
@@ -38,13 +39,18 @@ interface PublishResult {
 
 export default function CourseEditorPage() {
   const router = useRouter()
-  const { courseId, moduleId, lessonId } = router.query
+  const { courseId, moduleId, lessonId, build } = router.query
   const { toast } = useToast()
 
   const [course, setCourse] = useState<EditorCourse | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [focusedModuleId, setFocusedModuleId] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+
+  // `?build=ai` ouvre le panneau de construction ; il reste ensuite pilotable
+  // depuis le bouton du Studio, sans dépendre de l'URL.
+  const [building, setBuilding] = useState(false)
+  const buildRequested = useRef(false)
 
   /**
    * Sélectionner une leçon met l'URL à jour sans recharger la page : le lien
@@ -81,10 +87,18 @@ export default function CourseEditorPage() {
     moduleId: typeof moduleId === 'string' ? moduleId : undefined,
   }
 
+  useEffect(() => {
+    if (buildRequested.current) return
+    if (build === 'ai') {
+      buildRequested.current = true
+      setBuilding(true)
+    }
+  }, [build])
+
   const load = useCallback(async () => {
     if (typeof courseId !== 'string') return
     const response = await fetch(`/api/teacher/courses/${courseId}/editor`)
-    if (!response.ok) return
+    if (!response.ok) return null
     const data: EditorCourse = await response.json()
     setCourse(data)
 
@@ -97,7 +111,7 @@ export default function CourseEditorPage() {
 
       setSelectedId(initial.lessonId)
       setFocusedModuleId(initial.moduleId)
-      return
+      return data
     }
 
     // Repli : on garde la leçon courante si elle existe encore.
@@ -105,6 +119,8 @@ export default function CourseEditorPage() {
       if (current && all.some((l) => l.id === current)) return current
       return all[0]?.id ?? null
     })
+
+    return data
   }, [courseId])
 
   useEffect(() => {
@@ -125,6 +141,21 @@ export default function CourseEditorPage() {
     const module = course?.modules.find((m) => m.id === focusedModuleId)
     return module && module.lessons.length === 0 ? module : null
   }, [course, focusedModuleId, selectedId])
+
+  /** `load` renvoie les données ; les composants n'en attendent aucune. */
+  const refresh = useCallback(async () => {
+    await load()
+  }, [load])
+
+  /** Retire `?build=ai` de l'URL, sans rechargement. */
+  const clearBuildParam = useCallback(() => {
+    if (typeof courseId !== 'string') return
+    router.replace(
+      { pathname: router.pathname, query: { courseId } },
+      undefined,
+      { shallow: true }
+    )
+  }, [courseId, router])
 
   /**
    * Publication. Un refus `CONFIRMATION_REQUIRED` n'est pas une erreur : c'est
@@ -257,6 +288,52 @@ export default function CourseEditorPage() {
       ) : (
         <>
           {isDemoCourse(course.code) && <DemoBanner />}
+
+          {building ? (
+            <CourseBuildPanel
+              courseId={typeof courseId === 'string' ? courseId : ''}
+              hasModules={course.modules.length > 0}
+              onClose={() => {
+                setBuilding(false)
+                clearBuildParam()
+              }}
+              onApplied={async (created) => {
+                const before = new Set(
+                  course.modules.flatMap((m) => m.lessons.map((l) => l.id))
+                )
+                const data = await load()
+                // Sélectionne la première leçon réellement créée, s'il y en a.
+                const fresh = (data?.modules ?? [])
+                  .flatMap((m) =>
+                    m.lessons.map((l) => ({ lessonId: l.id, moduleId: m.id }))
+                  )
+                  .find((l) => !before.has(l.lessonId))
+                setBuilding(false)
+                if (fresh) {
+                  select(fresh.lessonId, fresh.moduleId)
+                } else {
+                  clearBuildParam()
+                }
+              }}
+              onToast={(title, description, isError) =>
+                toast({
+                  title,
+                  description,
+                  tone: isError ? 'error' : 'success',
+                })
+              }
+            />
+          ) : (
+            <div className="mb-5 flex justify-end">
+              <button
+                onClick={() => setBuilding(true)}
+                className={buttonClasses('secondary', 'md')}
+              >
+                Construire avec l’IA
+              </button>
+            </div>
+          )}
+
           <ReviewSummary course={course} />
 
           <div className="grid gap-5 lg:grid-cols-[300px_1fr] lg:items-start">
@@ -298,7 +375,7 @@ export default function CourseEditorPage() {
                     key={`meta-${emptyFocusedModule.id}`}
                     module={emptyFocusedModule}
                     lesson={null}
-                    onSaved={load}
+                    onSaved={refresh}
                     onToast={(title, description, isError) =>
                       toast({
                         title,
@@ -321,7 +398,7 @@ export default function CourseEditorPage() {
                     key={`meta-${selectedModule.id}-${selectedLesson.id}`}
                     module={selectedModule}
                     lesson={selectedLesson}
-                    onSaved={load}
+                    onSaved={refresh}
                     onToast={(title, description, isError) =>
                       toast({
                         title,
@@ -336,7 +413,7 @@ export default function CourseEditorPage() {
                   lesson={selectedLesson}
                   moduleTitle={selectedModule.title}
                   busy={busy === `lesson:${selectedLesson.id}`}
-                  onSaved={load}
+                  onSaved={refresh}
                   onToast={(title, description, isError) =>
                     toast({
                       title,
