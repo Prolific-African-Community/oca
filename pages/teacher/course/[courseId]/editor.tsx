@@ -1,5 +1,7 @@
 import { requireAssignedCoursePage } from '../../../../lib/pageGuard'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { resolveInitialSelection } from '../../../../lib/editorSelection'
+import { MetadataPanel } from '../../../../components/teacher/MetadataPanel'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { AppShell } from '../../../../components/app/AppShell'
@@ -36,12 +38,48 @@ interface PublishResult {
 
 export default function CourseEditorPage() {
   const router = useRouter()
-  const { courseId } = router.query
+  const { courseId, moduleId, lessonId } = router.query
   const { toast } = useToast()
 
   const [course, setCourse] = useState<EditorCourse | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [focusedModuleId, setFocusedModuleId] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+
+  /**
+   * Sélectionner une leçon met l'URL à jour sans recharger la page : le lien
+   * reste partageable et le rechargement retombe au bon endroit.
+   */
+  const select = useCallback(
+    (id: string, ownerModuleId?: string) => {
+      setSelectedId(id)
+      setFocusedModuleId(ownerModuleId ?? null)
+      if (typeof courseId !== 'string') return
+      router.replace(
+        { pathname: router.pathname, query: { courseId, lessonId: id } },
+        undefined,
+        { shallow: true }
+      )
+    },
+    [courseId, router]
+  )
+
+  /**
+   * Le lien profond ne s'applique qu'une fois : passé le premier chargement,
+   * c'est la sélection de l'enseignant qui fait foi, et un enregistrement ou
+   * une suppression ne doit pas le renvoyer ailleurs.
+   */
+  const deepLinkApplied = useRef(false)
+
+  /**
+   * Paramètres d'URL lus au moment du chargement plutôt qu'en dépendance :
+   * sans cela, synchroniser l'URL à chaque sélection relancerait une requête.
+   */
+  const deepLink = useRef<{ lessonId?: string; moduleId?: string }>({})
+  deepLink.current = {
+    lessonId: typeof lessonId === 'string' ? lessonId : undefined,
+    moduleId: typeof moduleId === 'string' ? moduleId : undefined,
+  }
 
   const load = useCallback(async () => {
     if (typeof courseId !== 'string') return
@@ -49,8 +87,21 @@ export default function CourseEditorPage() {
     if (!response.ok) return
     const data: EditorCourse = await response.json()
     setCourse(data)
+
+    const all = data.modules.flatMap((m) => m.lessons)
+
+    if (!deepLinkApplied.current) {
+      deepLinkApplied.current = true
+
+      const initial = resolveInitialSelection(data.modules, deepLink.current)
+
+      setSelectedId(initial.lessonId)
+      setFocusedModuleId(initial.moduleId)
+      return
+    }
+
+    // Repli : on garde la leçon courante si elle existe encore.
     setSelectedId((current) => {
-      const all = data.modules.flatMap((m) => m.lessons)
       if (current && all.some((l) => l.id === current)) return current
       return all[0]?.id ?? null
     })
@@ -67,6 +118,13 @@ export default function CourseEditorPage() {
     }
     return { selectedLesson: null, selectedModule: null }
   }, [course, selectedId])
+
+  /** Module ciblé par un lien profond mais dépourvu de leçon. */
+  const emptyFocusedModule = useMemo(() => {
+    if (selectedId || !focusedModuleId) return null
+    const module = course?.modules.find((m) => m.id === focusedModuleId)
+    return module && module.lessons.length === 0 ? module : null
+  }, [course, focusedModuleId, selectedId])
 
   /**
    * Publication. Un refus `CONFIRMATION_REQUIRED` n'est pas une erreur : c'est
@@ -201,16 +259,17 @@ export default function CourseEditorPage() {
           {isDemoCourse(course.code) && <DemoBanner />}
           <ReviewSummary course={course} />
 
-          <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
-            {/* Navigation : modules et leçons */}
-            <div className="space-y-4">
+          <div className="grid gap-5 lg:grid-cols-[300px_1fr] lg:items-start">
+            {/* Navigation : modules et leçons, visible pendant l'édition */}
+            <div className="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pb-4">
               {course.modules.map((module) => (
                 <ModuleNav
                   key={module.id}
                   module={module}
                   selectedId={selectedId}
+                  focused={module.id === focusedModuleId}
                   busy={busy}
-                  onSelect={setSelectedId}
+                  onSelect={(id) => select(id, module.id)}
                   onPublishModule={(payload, key, label) =>
                     publish(
                       `/api/teacher/modules/${module.id}/publish`,
@@ -233,8 +292,46 @@ export default function CourseEditorPage() {
 
             {/* Leçon sélectionnée */}
             <div>
-              {selectedLesson && selectedModule ? (
-                <LessonSectionEditor
+              {!selectedLesson && emptyFocusedModule ? (
+                <div className="space-y-5">
+                  <MetadataPanel
+                    key={`meta-${emptyFocusedModule.id}`}
+                    module={emptyFocusedModule}
+                    lesson={null}
+                    onSaved={load}
+                    onToast={(title, description, isError) =>
+                      toast({
+                        title,
+                        description,
+                        tone: isError ? 'error' : 'success',
+                      })
+                    }
+                  />
+                  <Card>
+                    <EmptyState
+                      icon={<LayersIcon size={22} />}
+                      title={`${emptyFocusedModule.title} — aucune leçon`}
+                      description="Ajoutez une leçon depuis la page du cours pour commencer à l’éditer ici."
+                    />
+                  </Card>
+                </div>
+              ) : selectedLesson && selectedModule ? (
+                <div className="space-y-5">
+                  <MetadataPanel
+                    key={`meta-${selectedModule.id}-${selectedLesson.id}`}
+                    module={selectedModule}
+                    lesson={selectedLesson}
+                    onSaved={load}
+                    onToast={(title, description, isError) =>
+                      toast({
+                        title,
+                        description,
+                        tone: isError ? 'error' : 'success',
+                      })
+                    }
+                  />
+
+                  <LessonSectionEditor
                   key={selectedLesson.id}
                   lesson={selectedLesson}
                   moduleTitle={selectedModule.title}
@@ -263,7 +360,8 @@ export default function CourseEditorPage() {
                       confirm
                     )
                   }
-                />
+                  />
+                </div>
               ) : (
                 <Card>
                   <EmptyState
@@ -359,6 +457,7 @@ function ReviewSummary({ course }: { course: EditorCourse }) {
 function ModuleNav({
   module,
   selectedId,
+  focused,
   busy,
   onSelect,
   onPublishModule,
@@ -366,6 +465,7 @@ function ModuleNav({
 }: {
   module: EditorModule
   selectedId: string | null
+  focused: boolean
   busy: string | null
   onSelect: (id: string) => void
   onPublishModule: (
@@ -394,7 +494,7 @@ function ModuleNav({
   }
 
   return (
-    <Card>
+    <Card className={focused ? 'border-apple/40' : undefined}>
       <CardHeader
         title={`${module.order + 1}. ${module.title}`}
         action={

@@ -107,18 +107,16 @@ function StatusSelect({
   )
 }
 
-/** Formulaire unique : module ou leçon, création ou édition. */
+/**
+ * Cette page est devenue une **vue d'ensemble** : l'édition a lieu dans le
+ * Course Studio. Le tiroir ne sert plus qu'à créer un module ou une leçon,
+ * faute d'écran de création dans le Studio. Toute modification de contenu part
+ * vers `/teacher/course/[courseId]/editor`, pour qu'il n'existe qu'un seul
+ * endroit où éditer.
+ */
 type Editor =
   | { kind: 'module'; mode: 'create' }
-  | { kind: 'module'; mode: 'edit'; module: Module }
   | { kind: 'lesson'; mode: 'create'; moduleId: string; moduleTitle: string }
-  | {
-      kind: 'lesson'
-      mode: 'edit'
-      moduleId: string
-      moduleTitle: string
-      lesson: Lesson
-    }
 
 export default function TeacherCoursePage() {
   const router = useRouter()
@@ -154,6 +152,18 @@ export default function TeacherCoursePage() {
     0
   )
 
+  const studioHref = (params?: { moduleId?: string; lessonId?: string }) => {
+    const base = `/teacher/course/${courseId}/editor`
+    if (params?.lessonId) return `${base}?lessonId=${params.lessonId}`
+    if (params?.moduleId) return `${base}?moduleId=${params.moduleId}`
+    return base
+  }
+
+  /** Ouvre le Studio sur un contenu précis, depuis un gestionnaire d'événement. */
+  const openStudio = (params?: { moduleId?: string; lessonId?: string }) => {
+    router.push(studioHref(params))
+  }
+
   return (
     <AppShell
       role="teacher"
@@ -167,12 +177,6 @@ export default function TeacherCoursePage() {
       action={
         course ? (
           <div className="hidden items-center gap-2 sm:flex">
-            <Link
-              href={`/teacher/course/${courseId}/editor`}
-              className={buttonClasses('secondary', 'md', 'no-underline')}
-            >
-              Ouvrir l’éditeur de cours
-            </Link>
             <button
               onClick={() => setCourseDraftOpen(true)}
               className={buttonClasses('secondary', 'md')}
@@ -181,10 +185,16 @@ export default function TeacherCoursePage() {
             </button>
             <button
               onClick={() => setEditor({ kind: 'module', mode: 'create' })}
-              className={buttonClasses('primary', 'md')}
+              className={buttonClasses('secondary', 'md')}
             >
               <PlusIcon size={18} /> Ajouter un module
             </button>
+            <Link
+              href={studioHref()}
+              className={buttonClasses('primary', 'md', 'no-underline')}
+            >
+              Ouvrir le Course Studio
+            </Link>
           </div>
         ) : null
       }
@@ -225,16 +235,26 @@ export default function TeacherCoursePage() {
                   {course.description}
                 </p>
               )}
-              <button
-                onClick={() => setCourseDraftOpen(true)}
-                className={buttonClasses(
-                  'secondary',
-                  'md',
-                  'mt-4 w-full sm:hidden'
-                )}
-              >
-                Générer un cours brouillon
-              </button>
+              <p className="text-ink/45 mt-4 text-sm">
+                Cette page est une vue d’ensemble. La rédaction, la génération
+                assistée, la publication et la suppression se font dans le
+                Course Studio.
+              </p>
+
+              <div className="mt-4 flex flex-col gap-2 sm:hidden">
+                <Link
+                  href={studioHref()}
+                  className={buttonClasses('primary', 'md', 'no-underline')}
+                >
+                  Ouvrir le Course Studio
+                </Link>
+                <button
+                  onClick={() => setCourseDraftOpen(true)}
+                  className={buttonClasses('secondary', 'md')}
+                >
+                  Générer un cours brouillon
+                </button>
+              </div>
             </Card>
           </Reveal>
 
@@ -253,19 +273,9 @@ export default function TeacherCoursePage() {
                   tone: isError ? 'error' : 'success',
                 })
               }
-              onEditLesson={(moduleId, lessonId) => {
-                const module = course.modules.find((m) => m.id === moduleId)
-                const lesson = module?.lessons.find((l) => l.id === lessonId)
-                if (module && lesson) {
-                  setEditor({
-                    kind: 'lesson',
-                    mode: 'edit',
-                    moduleId: module.id,
-                    moduleTitle: module.title,
-                    lesson,
-                  })
-                }
-              }}
+              onEditLesson={(_moduleId, lessonId) =>
+                openStudio({ lessonId })
+              }
             />
           </div>
 
@@ -327,18 +337,12 @@ export default function TeacherCoursePage() {
                           <Badge tone={STATUS_TONES[m.status]}>
                             {STATUS_LABELS[m.status]}
                           </Badge>
-                          <button
-                            onClick={() =>
-                              setEditor({
-                                kind: 'module',
-                                mode: 'edit',
-                                module: m,
-                              })
-                            }
+                          <Link
+                            href={studioHref({ moduleId: m.id })}
                             className="text-sm font-medium text-apple hover:underline"
                           >
                             Modifier
-                          </button>
+                          </Link>
                         </div>
                       }
                     />
@@ -356,45 +360,35 @@ export default function TeacherCoursePage() {
                     ) : (
                       <ul className="space-y-1">
                         {m.lessons.map((l) => (
-                          <li
-                            key={l.id}
-                            className="flex items-center gap-3 rounded-2xl p-2.5 transition-colors hover:bg-cloud"
-                          >
-                            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cloud text-sm font-medium text-ink/50">
-                              {l.order + 1}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-[15px] font-medium text-ink">
-                                {l.title}
-                              </p>
-                              <p className="text-ink/45 truncate text-sm">
-                                {l.estimatedMinutes
-                                  ? `${l.estimatedMinutes} min`
-                                  : 'Durée non précisée'}
-                                {l.content ? '' : ' · sans contenu'}
-                              </p>
-                            </div>
-                            <Badge tone={STATUS_TONES[l.status]}>
-                              {STATUS_LABELS[l.status]}
-                            </Badge>
-                            {Boolean(l.contentJson) && (
-                              <Badge tone="brand">Structuré</Badge>
-                            )}
-                            <button
-                              onClick={() =>
-                                setEditor({
-                                  kind: 'lesson',
-                                  mode: 'edit',
-                                  moduleId: m.id,
-                                  moduleTitle: m.title,
-                                  lesson: l,
-                                })
-                              }
-                              className="text-ink/30 transition-colors hover:text-ink/70"
-                              aria-label={`Modifier ${l.title}`}
+                          <li key={l.id}>
+                            {/* La ligne entière ouvre le Studio sur cette leçon. */}
+                            <Link
+                              href={studioHref({ lessonId: l.id })}
+                              aria-label={`Modifier ${l.title} dans le Course Studio`}
+                              className="flex items-center gap-3 rounded-2xl p-2.5 no-underline transition-colors hover:bg-cloud"
                             >
+                              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cloud text-sm font-medium text-ink/50">
+                                {l.order + 1}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-[15px] font-medium text-ink">
+                                  {l.title}
+                                </p>
+                                <p className="text-ink/45 truncate text-sm">
+                                  {l.estimatedMinutes
+                                    ? `${l.estimatedMinutes} min`
+                                    : 'Durée non précisée'}
+                                  {l.content ? '' : ' · sans contenu'}
+                                </p>
+                              </div>
+                              <Badge tone={STATUS_TONES[l.status]}>
+                                {STATUS_LABELS[l.status]}
+                              </Badge>
+                              {Boolean(l.contentJson) && (
+                                <Badge tone="brand">Structuré</Badge>
+                              )}
                               <ChevronRightIcon size={18} />
-                            </button>
+                            </Link>
                           </li>
                         ))}
                       </ul>
@@ -457,6 +451,11 @@ export default function TeacherCoursePage() {
   )
 }
 
+/**
+ * Tiroir de **création** uniquement : un module vide, ou une leçon vide dans
+ * un module. La rédaction se poursuit ensuite dans le Course Studio, seul
+ * endroit où l'on modifie un contenu existant.
+ */
 function ContentEditor({
   editor,
   courseId,
@@ -476,46 +475,18 @@ function ContentEditor({
 
   // Réinitialise le formulaire chaque fois qu'on ouvre un autre objet.
   const signature = editor
-    ? `${editor.kind}:${editor.mode}:${
-        editor.mode === 'edit'
-          ? editor.kind === 'module'
-            ? editor.module.id
-            : editor.lesson.id
-          : editor.kind === 'lesson'
-          ? editor.moduleId
-          : 'new'
-      }`
+    ? `${editor.kind}:${editor.kind === 'lesson' ? editor.moduleId : 'new'}`
     : ''
 
   useEffect(() => {
     setError('')
     if (!editor) return
 
-    if (editor.kind === 'module') {
-      setForm(
-        editor.mode === 'edit'
-          ? {
-              title: editor.module.title,
-              description: editor.module.description ?? '',
-              status: editor.module.status,
-              order: String(editor.module.order),
-            }
-          : { title: '', description: '', status: 'DRAFT' }
-      )
-    } else {
-      setForm(
-        editor.mode === 'edit'
-          ? {
-              title: editor.lesson.title,
-              content: editor.lesson.content ?? '',
-              estimatedMinutes:
-                editor.lesson.estimatedMinutes?.toString() ?? '',
-              status: editor.lesson.status,
-              order: String(editor.lesson.order),
-            }
-          : { title: '', content: '', estimatedMinutes: '', status: 'DRAFT' }
-      )
-    }
+    setForm(
+      editor.kind === 'module'
+        ? { title: '', description: '', status: 'DRAFT' }
+        : { title: '', content: '', estimatedMinutes: '', status: 'DRAFT' }
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature])
 
@@ -523,19 +494,13 @@ function ContentEditor({
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }))
 
-  const endpoint = () => {
-    if (editor.kind === 'module') {
-      return editor.mode === 'create'
-        ? { url: `/api/teacher/courses/${courseId}/modules`, method: 'POST' }
-        : { url: `/api/teacher/modules/${editor.module.id}`, method: 'PATCH' }
-    }
-    return editor.mode === 'create'
-      ? {
+  const endpoint = () =>
+    editor.kind === 'module'
+      ? { url: `/api/teacher/courses/${courseId}/modules`, method: 'POST' }
+      : {
           url: `/api/teacher/modules/${editor.moduleId}/lessons`,
           method: 'POST',
         }
-      : { url: `/api/teacher/lessons/${editor.lesson.id}`, method: 'PATCH' }
-  }
 
   const submit = async () => {
     setLoading(true)
@@ -562,13 +527,7 @@ function ContentEditor({
   }
 
   const isModule = editor.kind === 'module'
-  const title = isModule
-    ? editor.mode === 'create'
-      ? 'Nouveau module'
-      : 'Modifier le module'
-    : editor.mode === 'create'
-    ? 'Nouvelle leçon'
-    : 'Modifier la leçon'
+  const title = isModule ? 'Nouveau module' : 'Nouvelle leçon'
 
   return (
     <Drawer
@@ -614,13 +573,10 @@ function ContentEditor({
           </label>
         ) : (
           <>
-            {editor.mode === 'edit' && Boolean(editor.lesson.contentJson) && (
-              <div className="text-ink/65 rounded-card border border-apple/10 bg-oca-tint px-4 py-3 text-sm">
-                Cette leçon possède un contenu structuré. Modifier le texte
-                ci-dessous remplacera son affichage structuré par ce texte afin
-                que votre modification soit immédiatement visible.
-              </div>
-            )}
+            <div className="text-ink/65 rounded-card border border-apple/10 bg-oca-tint px-4 py-3 text-sm">
+              Un texte de départ suffit : vous structurerez la leçon section par
+              section dans le Course Studio, avec ou sans l’assistant.
+            </div>
             <label className="block">
               <span className="mb-2 block text-sm font-medium text-ink/70">
                 Contenu
@@ -642,20 +598,10 @@ function ContentEditor({
           </>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <StatusSelect
-            value={form.status ?? 'DRAFT'}
-            onChange={(v) => set('status', v)}
-          />
-          {editor.mode === 'edit' && (
-            <Input
-              label="Ordre"
-              type="number"
-              value={form.order ?? ''}
-              onChange={(e) => set('order', e.target.value)}
-            />
-          )}
-        </div>
+        <StatusSelect
+          value={form.status ?? 'DRAFT'}
+          onChange={(v) => set('status', v)}
+        />
 
         {error && (
           <div
