@@ -6,7 +6,8 @@ import { AppShell } from '../../components/app/AppShell'
 import { Card } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { Avatar } from '../../components/ui/Avatar'
-import { buttonClasses } from '../../components/ui/Button'
+import { Button, buttonClasses } from '../../components/ui/Button'
+import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useToast } from '../../components/overlay/Toast'
 import { StudentEnrollment } from '../../components/admin/StudentEnrollment'
@@ -34,6 +35,7 @@ interface Student {
   program: string
   semester: string | null
   enrollmentStatus: string | null
+  enrollmentId: string | null
   programId: string | null
   semesterId: string | null
   academicYear: string | null
@@ -99,6 +101,29 @@ export default function AdminStudentsPage() {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'incomplete' | 'inactive'>('all')
   const [programFilter, setProgramFilter] = useState('')
+
+  /** Panneau ouvert sur un étudiant : correction, mot de passe, accès, rattachement. */
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+  })
+  const [editError, setEditError] = useState('')
+  const [resettingId, setResettingId] = useState<string | null>(null)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [movingId, setMovingId] = useState<string | null>(null)
+  const [moveForm, setMoveForm] = useState({
+    programId: '',
+    academicYearId: '',
+    semesterId: '',
+  })
+  const [moveError, setMoveError] = useState('')
+  const [temporary, setTemporary] = useState<{
+    email: string
+    password: string
+  } | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     const [list, s] = await Promise.all([
@@ -190,6 +215,124 @@ export default function AdminStudentsPage() {
 
   const canEnroll =
     structure.programs.length > 0 && structure.semesters.length > 0
+
+  /** Ferme tous les panneaux : une seule action ouverte à la fois. */
+  const closePanels = () => {
+    setEditingId(null)
+    setResettingId(null)
+    setTogglingId(null)
+    setMovingId(null)
+    setEditError('')
+    setMoveError('')
+  }
+
+  const patch = async (id: string, payload: Record<string, unknown>) => {
+    const response = await fetch(`/api/admin/students/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.message || 'Action impossible')
+    return data
+  }
+
+  const saveStudent = async (id: string) => {
+    setBusy(true)
+    setEditError('')
+    try {
+      await patch(id, editForm)
+      closePanels()
+      await load()
+      toast({ title: 'Étudiant mis à jour', tone: 'success' })
+    } catch (err: any) {
+      setEditError(err.message)
+      toast({
+        title: 'Modification impossible',
+        description: err.message,
+        tone: 'error',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const toggleAccess = async (student: Student) => {
+    setBusy(true)
+    try {
+      await patch(student.id, { isActive: !student.isActive })
+      closePanels()
+      await load()
+      toast({
+        title: student.isActive ? 'Accès retiré' : 'Accès rétabli',
+        tone: 'success',
+      })
+    } catch (err: any) {
+      toast({ title: 'Action impossible', description: err.message, tone: 'error' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resetPassword = async (student: Student) => {
+    setBusy(true)
+    try {
+      const response = await fetch(
+        `/api/admin/students/${student.id}/reset-password`,
+        { method: 'POST' }
+      )
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok)
+        throw new Error(data.message || 'Réinitialisation impossible')
+
+      closePanels()
+      setTemporary({ email: data.email, password: data.password })
+    } catch (err: any) {
+      toast({
+        title: 'Réinitialisation impossible',
+        description: err.message,
+        tone: 'error',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const moveStudent = async (id: string) => {
+    setBusy(true)
+    setMoveError('')
+    try {
+      await patch(id, {
+        enrollment: {
+          programId: moveForm.programId,
+          semesterId: moveForm.semesterId,
+        },
+      })
+      closePanels()
+      await load()
+      toast({
+        title: 'Rattachement mis à jour',
+        description: 'Les cours visibles ont changé pour cet étudiant.',
+        tone: 'success',
+      })
+    } catch (err: any) {
+      setMoveError(err.message)
+      toast({
+        title: 'Rattachement impossible',
+        description: err.message,
+        tone: 'error',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Semestres cohérents avec le programme et l'année choisis. */
+  const moveSemesters = structure.semesters.filter(
+    (sem) =>
+      sem.programId === moveForm.programId &&
+      (!moveForm.academicYearId || sem.academicYearId === moveForm.academicYearId)
+  )
 
   return (
     <AppShell
@@ -323,13 +466,26 @@ export default function AdminStudentsPage() {
                   <p className="truncate text-sm text-ink/45">{student.email}</p>
                 </div>
                 <Badge tone="warning">Sans inscription</Badge>
+                <button
+                  onClick={() => {
+                    closePanels()
+                    setQuery(student.email)
+                    setFilter('all')
+                    setProgramFilter('')
+                    setMovingId(student.id)
+                    setMoveForm({
+                      programId: '',
+                      academicYearId: '',
+                      semesterId: '',
+                    })
+                  }}
+                  className="text-sm font-medium text-apple hover:underline"
+                >
+                  Rattacher
+                </button>
               </li>
             ))}
           </ul>
-          <p className="text-ink/40 mt-3 text-xs">
-            Le rattachement d’un compte existant sera traité dans un prochain
-            run : aujourd’hui, l’inscription se fait à la création.
-          </p>
         </Card>
       )}
 
@@ -397,6 +553,26 @@ export default function AdminStudentsPage() {
             rattachement.
           </p>
         </div>
+
+        {temporary && (
+          <div className="mb-4 rounded-card border border-emerald-100 bg-emerald-50 p-4">
+            <p className="text-sm font-medium text-emerald-800">
+              Ce mot de passe est affiché une seule fois.
+            </p>
+            <p className="mt-1 text-sm text-emerald-900">
+              {temporary.email} ·{' '}
+              <code className="rounded bg-white/70 px-1.5 py-0.5">
+                {temporary.password}
+              </code>
+            </p>
+            <button
+              onClick={() => setTemporary(null)}
+              className="mt-2 text-sm font-medium text-emerald-800 hover:underline"
+            >
+              J’ai noté ce mot de passe
+            </button>
+          </div>
+        )}
 
         {students.length === 0 ? (
           <EmptyState
@@ -480,43 +656,333 @@ export default function AdminStudentsPage() {
               {visible.map((student) => (
                 <li
                   key={student.id}
-                  className="flex flex-wrap items-center gap-3 rounded-2xl p-2.5 transition-colors hover:bg-cloud"
+                  className="rounded-2xl border border-hairline bg-white p-3"
                 >
-                  <Avatar name={displayName(student)} size="md" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-medium text-ink">
-                      {displayName(student)}
-                    </p>
-                    <p className="truncate text-sm text-ink/45">
-                      {student.email}
-                    </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Avatar name={displayName(student)} size="md" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-medium text-ink">
+                        {displayName(student)}
+                      </p>
+                      <p className="truncate text-sm text-ink/45">
+                        {student.email}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!student.isActive && (
+                        <Badge tone="warning">Sans accès</Badge>
+                      )}
+                      {student.enrollmentStatus ? (
+                        <>
+                          <Badge tone="brand">{student.program}</Badge>
+                          {student.semester && (
+                            <Badge tone="neutral">{student.semester}</Badge>
+                          )}
+                          {student.academicYear && (
+                            <Badge tone="neutral">{student.academicYear}</Badge>
+                          )}
+                        </>
+                      ) : (
+                        <Badge tone="warning">Sans inscription</Badge>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {!student.isActive && (
-                      <Badge tone="warning">Sans accès</Badge>
-                    )}
-                    {student.enrollmentStatus ? (
-                      <>
-                        <Badge tone="brand">{student.program}</Badge>
-                        {student.semester && (
-                          <Badge tone="neutral">{student.semester}</Badge>
-                        )}
-                        {student.academicYear && (
-                          <Badge tone="neutral">{student.academicYear}</Badge>
-                        )}
-                      </>
-                    ) : (
-                      <Badge tone="warning">Sans inscription</Badge>
-                    )}
+
+                  <div className="mt-2 flex flex-wrap items-center gap-3 px-1">
+                    <button
+                      onClick={() => {
+                        closePanels()
+                        setEditingId(student.id)
+                        setEditForm({
+                          firstName: student.firstName,
+                          lastName: student.lastName,
+                          email: student.email,
+                        })
+                      }}
+                      className="text-sm font-medium text-apple hover:underline"
+                    >
+                      Modifier
+                    </button>
+                    <button
+                      onClick={() => {
+                        closePanels()
+                        setMovingId(student.id)
+                        setMoveForm({
+                          programId: student.programId ?? '',
+                          academicYearId: student.academicYearId ?? '',
+                          semesterId: student.semesterId ?? '',
+                        })
+                      }}
+                      className="text-sm font-medium text-apple hover:underline"
+                    >
+                      Corriger le rattachement
+                    </button>
+                    <button
+                      onClick={() => {
+                        closePanels()
+                        setResettingId(student.id)
+                      }}
+                      className="text-ink/50 text-sm font-medium hover:underline"
+                    >
+                      Réinitialiser le mot de passe
+                    </button>
+                    <button
+                      onClick={() => {
+                        closePanels()
+                        setTogglingId(student.id)
+                      }}
+                      className={
+                        'text-sm font-medium hover:underline ' +
+                        (student.isActive ? 'text-red-500' : 'text-emerald-600')
+                      }
+                    >
+                      {student.isActive ? 'Retirer l’accès' : 'Rétablir l’accès'}
+                    </button>
                   </div>
+
+                  {editingId === student.id && (
+                    <div className="mt-3 rounded-card border border-apple/30 bg-oca-tint/30 p-4">
+                      <div className="grid gap-4 sm:grid-cols-3">
+                        <Input
+                          label="Prénom"
+                          value={editForm.firstName}
+                          onChange={(e) =>
+                            setEditForm((c) => ({
+                              ...c,
+                              firstName: e.target.value,
+                            }))
+                          }
+                        />
+                        <Input
+                          label="Nom"
+                          value={editForm.lastName}
+                          onChange={(e) =>
+                            setEditForm((c) => ({
+                              ...c,
+                              lastName: e.target.value,
+                            }))
+                          }
+                        />
+                        <Input
+                          label="Adresse email"
+                          type="email"
+                          value={editForm.email}
+                          onChange={(e) =>
+                            setEditForm((c) => ({ ...c, email: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <p className="text-ink/45 mt-2 text-xs">
+                        L’adresse sert à se connecter : la modifier change
+                        l’identifiant de l’étudiant.
+                      </p>
+                      {editError && (
+                        <div
+                          role="alert"
+                          className="mt-3 rounded-card border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600"
+                        >
+                          {editError}
+                        </div>
+                      )}
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <Button
+                          size="md"
+                          loading={busy}
+                          onClick={() => saveStudent(student.id)}
+                        >
+                          Enregistrer
+                        </Button>
+                        <button
+                          onClick={closePanels}
+                          className="text-ink/60 text-sm font-medium hover:underline"
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {movingId === student.id && (
+                    <div className="mt-3 rounded-card border border-apple/30 bg-oca-tint/30 p-4">
+                      <p className="mb-1 text-[15px] font-medium text-ink">
+                        Rattachement de {displayName(student)}
+                      </p>
+                      <p className="text-ink/50 mb-3 text-sm">
+                        Actuellement :{' '}
+                        {student.enrollmentStatus
+                          ? `${student.program} · ${student.semester} · ${student.academicYear}`
+                          : 'aucune inscription'}
+                      </p>
+
+                      <div className="grid gap-4 sm:grid-cols-3">
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-medium text-ink/70">
+                            Programme
+                          </span>
+                          <select
+                            value={moveForm.programId}
+                            onChange={(e) =>
+                              setMoveForm((c) => ({
+                                ...c,
+                                programId: e.target.value,
+                                semesterId: '',
+                              }))
+                            }
+                            className="h-12 w-full rounded-card border border-hairline bg-white px-3 text-[15px] text-ink focus:border-apple focus:outline-none focus:ring-4 focus:ring-apple/15"
+                          >
+                            <option value="">Choisir un programme</option>
+                            {structure.programs.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-medium text-ink/70">
+                            Année universitaire
+                          </span>
+                          <select
+                            value={moveForm.academicYearId}
+                            onChange={(e) =>
+                              setMoveForm((c) => ({
+                                ...c,
+                                academicYearId: e.target.value,
+                                semesterId: '',
+                              }))
+                            }
+                            className="h-12 w-full rounded-card border border-hairline bg-white px-3 text-[15px] text-ink focus:border-apple focus:outline-none focus:ring-4 focus:ring-apple/15"
+                          >
+                            <option value="">Toutes les années</option>
+                            {structure.academicYears.map((y) => (
+                              <option key={y.id} value={y.id}>
+                                {y.isCurrent ? `${y.name} · en cours` : y.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-medium text-ink/70">
+                            Semestre
+                          </span>
+                          <select
+                            value={moveForm.semesterId}
+                            onChange={(e) =>
+                              setMoveForm((c) => ({
+                                ...c,
+                                semesterId: e.target.value,
+                              }))
+                            }
+                            className="h-12 w-full rounded-card border border-hairline bg-white px-3 text-[15px] text-ink focus:border-apple focus:outline-none focus:ring-4 focus:ring-apple/15"
+                          >
+                            <option value="">Choisir un semestre</option>
+                            {moveSemesters.map((sem) => (
+                              <option key={sem.id} value={sem.id}>
+                                {sem.name}
+                              </option>
+                            ))}
+                          </select>
+                          {!moveForm.programId && (
+                            <span className="text-ink/45 mt-1 block text-xs">
+                              Choisissez d’abord un programme
+                            </span>
+                          )}
+                        </label>
+                      </div>
+
+                      <p className="mt-3 rounded-card border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        Changer le semestre modifie les cours visibles pour cet
+                        étudiant. Sa progression déjà enregistrée n’est pas
+                        supprimée, mais elle porte sur les cours de l’ancien
+                        semestre.
+                      </p>
+
+                      {moveError && (
+                        <div
+                          role="alert"
+                          className="mt-3 rounded-card border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600"
+                        >
+                          {moveError}
+                        </div>
+                      )}
+
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <Button
+                          size="md"
+                          loading={busy}
+                          disabled={!moveForm.programId || !moveForm.semesterId}
+                          onClick={() => moveStudent(student.id)}
+                        >
+                          {student.enrollmentStatus
+                            ? 'Déplacer l’étudiant'
+                            : 'Inscrire dans ce semestre'}
+                        </Button>
+                        <button
+                          onClick={closePanels}
+                          className="text-ink/60 text-sm font-medium hover:underline"
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {resettingId === student.id && (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-sm text-amber-800">
+                        Générer un nouveau mot de passe provisoire pour{' '}
+                        {displayName(student)} ? L’ancien cessera aussitôt de
+                        fonctionner, et le nouveau ne s’affichera qu’une fois.
+                      </p>
+                      <div className="mt-2.5 flex items-center gap-3">
+                        <Button
+                          size="md"
+                          loading={busy}
+                          onClick={() => resetPassword(student)}
+                        >
+                          Générer
+                        </Button>
+                        <button
+                          onClick={closePanels}
+                          className="text-ink/60 text-sm font-medium hover:underline"
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {togglingId === student.id && (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-sm text-amber-800">
+                        {student.isActive
+                          ? `Retirer l’accès de ${displayName(student)} ? Cet étudiant ne pourra plus se connecter à votre établissement ni voir ses cours. Son compte et son inscription sont conservés, et l’accès peut être rétabli.`
+                          : `Rétablir l’accès de ${displayName(student)} ? Il retrouvera ses cours.`}
+                      </p>
+                      <div className="mt-2.5 flex items-center gap-3">
+                        <Button
+                          size="md"
+                          loading={busy}
+                          onClick={() => toggleAccess(student)}
+                        >
+                          {student.isActive ? 'Retirer l’accès' : 'Rétablir'}
+                        </Button>
+                        <button
+                          onClick={closePanels}
+                          className="text-ink/60 text-sm font-medium hover:underline"
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
 
             <p className="text-ink/40 mt-4 border-t border-hairline pt-4 text-xs">
-              La correction d’un compte étudiant, la réinitialisation de son
-              mot de passe et le retrait d’accès seront traités dans un
-              prochain run.
+              Aucun étudiant n’est supprimé : retirer l’accès conserve le
+              compte, l’inscription et la progression.
             </p>
           </>
         )}

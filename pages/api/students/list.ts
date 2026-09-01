@@ -33,10 +33,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           firstName: true,
           lastName: true,
           enrollments: {
+            // L'inscription active d'abord : c'est elle qui détermine les
+            // cours visibles. Une inscription close ne doit pas la masquer.
             where: { institutionId: scope.institutionId },
-            orderBy: { enrolledAt: 'desc' },
+            orderBy: [{ status: 'asc' }, { enrolledAt: 'desc' }],
             take: 1,
             select: {
+              id: true,
               status: true,
               programId: true,
               semesterId: true,
@@ -71,6 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         program: enrollment?.program.name ?? '—',
         semester: enrollment?.semester.name ?? null,
         enrollmentStatus: enrollment?.status ?? null,
+        enrollmentId: enrollment?.id ?? null,
         // Ajouts pour l'espace Étudiants : cohortes, filtres, état d'accès.
         programId: enrollment?.programId ?? null,
         semesterId: enrollment?.semesterId ?? null,
