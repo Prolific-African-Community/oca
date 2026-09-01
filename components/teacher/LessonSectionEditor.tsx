@@ -177,6 +177,64 @@ const SECTION_LABELS: Record<SectionKey, string> = {
   exercises: 'Exercices',
 }
 
+/** Ordre d'affichage des sections, texte et listes confondus. */
+const SECTION_ORDER: SectionKey[] = [
+  'introduction',
+  'keyConcepts',
+  'explanation',
+  'practicalExample',
+  'recap',
+  'exercises',
+]
+
+/**
+ * En-tête d'une section repliée : il doit suffire à décider s'il faut
+ * l'ouvrir. On y lit donc l'intitulé, l'état, et la mesure du contenu —
+ * caractères pour un texte, éléments pour une liste.
+ */
+function SectionShell({
+  label,
+  missing,
+  measure,
+  open,
+  onToggle,
+  children,
+}: {
+  label: string
+  missing: boolean
+  measure: string
+  open: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <Card className={open ? undefined : 'py-3'}>
+      {/* Marge négative compensée : la cible tactile grandit sans écarter
+          visuellement l'en-tête de la carte. */}
+      <button
+        onClick={onToggle}
+        aria-expanded={open}
+        className="-my-2 flex w-full items-center gap-3 py-2 text-left"
+      >
+        <span aria-hidden="true" className="text-ink/35 w-3 shrink-0 text-xs">
+          {open ? '▾' : '▸'}
+        </span>
+        <span className="text-[15px] font-medium text-ink">{label}</span>
+        {missing ? (
+          <Badge tone="warning">Manquant</Badge>
+        ) : (
+          <span className="text-ink/40 text-xs">{measure}</span>
+        )}
+        <span className="text-ink/35 ml-auto shrink-0 text-xs">
+          {open ? 'Replier' : 'Modifier'}
+        </span>
+      </button>
+
+      {open && <div className="mt-4">{children}</div>}
+    </Card>
+  )
+}
+
 /** Barre d'actions commune à toutes les sections : manuel d'abord, IA ensuite. */
 function SectionActions({
   sectionKey,
@@ -345,6 +403,32 @@ export function LessonSectionEditor({
   const [preview, setPreview] = useState<SectionPreview | null>(null)
   const [confirmClear, setConfirmClear] = useState<SectionKey | null>(null)
   const [aiError, setAiError] = useState('')
+
+  /**
+   * Sections ouvertes. Le composant est monté avec `key={lesson.id}` :
+   * changer de leçon le remonte, et ce calcul s'exécute à nouveau.
+   *
+   * On ouvre d'abord ce qui manque — c'est ce qui appelle une action. À
+   * défaut, l'introduction, qui est le point d'entrée naturel de la leçon.
+   */
+  const [openSections, setOpenSections] = useState<Set<SectionKey>>(() => {
+    const firstMissing = SECTION_ORDER.find((key) =>
+      lesson.quality.missingSections.includes(key)
+    )
+    return new Set<SectionKey>([firstMissing ?? 'introduction'])
+  })
+
+  /** Mode concentration : une seule section ouverte à la fois. */
+  const [focusMode, setFocusMode] = useState(false)
+
+  const toggleSection = (key: SectionKey) =>
+    setOpenSections((current) => {
+      if (focusMode) return current.has(key) ? new Set() : new Set([key])
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
 
   // Publication d'une lecon signalee comme faible : confirmation explicite.
   const [publishWarning, setPublishWarning] = useState<string | null>(null)
@@ -743,16 +827,56 @@ export function LessonSectionEditor({
         </div>
       )}
 
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        <p className="text-ink/50 text-sm">
+          Sections de la leçon — {openSections.size}/{SECTION_ORDER.length}{' '}
+          ouverte(s)
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-ink/60 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={focusMode}
+              onChange={(e) => {
+                const on = e.target.checked
+                setFocusMode(on)
+                // Passer en concentration ne garde que la première ouverte.
+                if (on) {
+                  setOpenSections((current) => {
+                    const first = SECTION_ORDER.find((k) => current.has(k))
+                    return first ? new Set([first]) : new Set()
+                  })
+                }
+              }}
+              className="h-4 w-4"
+            />
+            Une section à la fois
+          </label>
+          <button
+            onClick={() => setOpenSections(new Set(SECTION_ORDER))}
+            disabled={focusMode}
+            className="text-sm font-medium text-apple hover:underline disabled:opacity-40 disabled:no-underline"
+          >
+            Tout déplier
+          </button>
+          <button
+            onClick={() => setOpenSections(new Set())}
+            className="text-ink/50 text-sm font-medium hover:underline"
+          >
+            Tout replier
+          </button>
+        </div>
+      </div>
+
       {TEXT_SECTIONS.map((section) => (
-        <Card key={section.key}>
-          <CardHeader
-            title={section.label}
-            action={
-              lesson.quality.missingSections.includes(section.key) ? (
-                <Badge tone="warning">Manquant</Badge>
-              ) : null
-            }
-          />
+        <SectionShell
+          key={section.key}
+          label={section.label}
+          missing={lesson.quality.missingSections.includes(section.key)}
+          measure={`${draft[section.key].trim().length} caractères`}
+          open={openSections.has(section.key)}
+          onToggle={() => toggleSection(section.key)}
+        >
           <Textarea
             value={draft[section.key]}
             rows={section.rows}
@@ -773,19 +897,20 @@ export function LessonSectionEditor({
             onAskClear={() => setConfirmClear(section.key)}
             onCancelClear={() => setConfirmClear(null)}
           />
-        </Card>
+        </SectionShell>
       ))}
 
       {LIST_SECTION_FIELDS.map((section) => (
-        <Card key={section.key}>
-          <CardHeader
-            title={section.label}
-            action={
-              lesson.quality.missingSections.includes(section.key) ? (
-                <Badge tone="warning">Manquant</Badge>
-              ) : null
-            }
-          />
+        <SectionShell
+          key={section.key}
+          label={section.label}
+          missing={lesson.quality.missingSections.includes(section.key)}
+          measure={`${
+            draft[section.key].filter((item) => item.trim()).length
+          } élément(s)`}
+          open={openSections.has(section.key)}
+          onToggle={() => toggleSection(section.key)}
+        >
           <p className="text-ink/45 mb-2 text-sm">{section.hint}</p>
           <Textarea
             value={draft[section.key].join('\n')}
@@ -814,7 +939,7 @@ export function LessonSectionEditor({
             onAskClear={() => setConfirmClear(section.key)}
             onCancelClear={() => setConfirmClear(null)}
           />
-        </Card>
+        </SectionShell>
       ))}
     </div>
   )
