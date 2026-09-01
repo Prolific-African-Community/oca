@@ -19,11 +19,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     where: {
       institutionId: scope.institutionId,
       role: Role.STUDENT,
-      isActive: true,
+      // Les comptes sans accès restent listés : les masquer priverait
+      // l'administrateur du seul moyen de les retrouver.
     },
     orderBy: { createdAt: 'asc' },
     select: {
       createdAt: true,
+      isActive: true,
       user: {
         select: {
           id: true,
@@ -36,7 +38,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             take: 1,
             select: {
               status: true,
-              semester: { select: { name: true } },
+              programId: true,
+              semesterId: true,
+              semester: {
+                select: {
+                  name: true,
+                  academicYear: { select: { id: true, name: true } },
+                },
+              },
               program: {
                 select: { name: true, faculty: { select: { name: true } } },
               },
@@ -50,7 +59,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Forme conservée telle que l'attend l'écran /admin :
   // { id, firstName, lastName, email, faculty, program }.
   return res.status(200).json(
-    memberships.map(({ user, createdAt }) => {
+    memberships.map(({ user, createdAt, isActive }) => {
       const enrollment = user.enrollments[0];
 
       return {
@@ -62,6 +71,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         program: enrollment?.program.name ?? '—',
         semester: enrollment?.semester.name ?? null,
         enrollmentStatus: enrollment?.status ?? null,
+        // Ajouts pour l'espace Étudiants : cohortes, filtres, état d'accès.
+        programId: enrollment?.programId ?? null,
+        semesterId: enrollment?.semesterId ?? null,
+        academicYear: enrollment?.semester.academicYear.name ?? null,
+        academicYearId: enrollment?.semester.academicYear.id ?? null,
+        isActive,
         createdAt,
       };
     })

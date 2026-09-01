@@ -6,13 +6,11 @@ import { useRouter } from 'next/router';
 import { AppShell } from '../../components/app/AppShell';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
+import { buttonClasses } from '../../components/ui/Button';
 import { Avatar } from '../../components/ui/Avatar';
-import { Button, buttonClasses } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Reveal } from '../../components/anim/Reveal';
-import { Drawer } from '../../components/overlay/Drawer';
 import { AuditFeed } from '../../components/admin/AuditFeed';
 import { useToast } from '../../components/overlay/Toast';
 import { useRegisterCommands } from '../../components/overlay/command';
@@ -80,18 +78,12 @@ const EMPTY_STRUCTURE: Structure = {
   courses: [],
 };
 
-function generatePassword() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  return Array.from({ length: 10 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
-}
-
 export default function AdminWorkspace() {
   const router = useRouter();
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const [students, setStudents] = useState<any[]>([]);
   const [structure, setStructure] = useState<Structure>(EMPTY_STRUCTURE);
-  const [drawer, setDrawer] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
 
@@ -225,7 +217,7 @@ export default function AdminWorkspace() {
         hint: 'Nouveau',
         group: 'Actions',
         icon: <PlusIcon size={17} />,
-        perform: () => setDrawer(true),
+        perform: () => router.push('/admin/students'),
       },
       {
         id: 'admin:assignments',
@@ -249,6 +241,11 @@ export default function AdminWorkspace() {
 
   const recent = useMemo(() => students.slice(-5).reverse(), [students]);
 
+  const activeStudents = useMemo(
+    () => students.filter((s) => s.isActive !== false),
+    [students]
+  );
+
   const studentsWithoutEnrollment = useMemo(
     () => students.filter((s) => !s.enrollmentStatus).length,
     [students]
@@ -271,9 +268,12 @@ export default function AdminWorkspace() {
       title="Pilotage"
       subtitle="Votre campus aujourd’hui"
       action={
-        <button onClick={() => setDrawer(true)} className={buttonClasses('primary', 'md', 'hidden sm:inline-flex')}>
+        <Link
+          href="/admin/students"
+          className={buttonClasses('primary', 'md', 'no-underline hidden sm:inline-flex')}
+        >
           <PlusIcon size={18} /> Inscrire un étudiant
-        </button>
+        </Link>
       }
     >
       {/* ---------------------------------------------- Vue d'ensemble */}
@@ -312,25 +312,19 @@ export default function AdminWorkspace() {
                 {setup.next.label}
               </p>
               {/* Chaque étape mène là où elle se traite réellement. */}
-              {setup.next.action === 'student' ? (
-                <button
-                  onClick={() => setDrawer(true)}
-                  className={buttonClasses('primary', 'md')}
-                >
-                  Faire maintenant
-                </button>
-              ) : (
-                <Link
-                  href={
-                    setup.next.action === 'assignment'
-                      ? '/admin/professors?mode=assign'
-                      : `/admin/structure?tab=${setup.next.tab ?? 'faculty'}`
-                  }
-                  className={buttonClasses('primary', 'md', 'no-underline')}
-                >
-                  Faire maintenant
-                </Link>
-              )}
+              {/* Chaque étape mène là où elle se traite réellement. */}
+              <Link
+                href={
+                  setup.next.action === 'student'
+                    ? '/admin/students'
+                    : setup.next.action === 'assignment'
+                    ? '/admin/professors?mode=assign'
+                    : `/admin/structure?tab=${setup.next.tab ?? 'faculty'}`
+                }
+                className={buttonClasses('primary', 'md', 'no-underline')}
+              >
+                Faire maintenant
+              </Link>
             </div>
           ) : (
             <p className="mt-4 rounded-card border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -346,7 +340,7 @@ export default function AdminWorkspace() {
         <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Metric
             label="Étudiants inscrits"
-            value={students.length}
+            value={activeStudents.length}
             hint={`${studentsWithoutEnrollment} sans inscription`}
             alert={studentsWithoutEnrollment > 0}
           />
@@ -374,12 +368,12 @@ export default function AdminWorkspace() {
         <Card className="mt-5">
           <CardHeader title="Que souhaitez-vous faire ?" />
           <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => setDrawer(true)}
-              className={buttonClasses('primary', 'md')}
+            <Link
+              href="/admin/students"
+              className={buttonClasses('primary', 'md', 'no-underline')}
             >
               <PlusIcon size={18} /> Inscrire un étudiant
-            </button>
+            </Link>
             <Link
               href="/admin/structure"
               className={buttonClasses('secondary', 'md', 'no-underline')}
@@ -471,8 +465,8 @@ export default function AdminWorkspace() {
         id="etudiants"
         title="Étudiants"
         description="Les personnes inscrites dans votre établissement."
-        actionLabel="Inscrire un étudiant"
-        onAction={() => setDrawer(true)}
+        actionLabel="Gérer les étudiants"
+        actionHref="/admin/students"
       >
         {students.length === 0 ? (
           <EmptyState
@@ -480,12 +474,12 @@ export default function AdminWorkspace() {
             title="Aucun étudiant pour le moment"
             description="Inscrivez votre premier étudiant — cela prend quelques secondes."
             action={
-              <button
-                onClick={() => setDrawer(true)}
-                className={buttonClasses('primary', 'md')}
+              <Link
+                href="/admin/students"
+                className={buttonClasses('primary', 'md', 'no-underline')}
               >
                 <PlusIcon size={17} /> Inscrire un étudiant
-              </button>
+              </Link>
             }
           />
         ) : (
@@ -639,16 +633,6 @@ export default function AdminWorkspace() {
         <AuditFeed limit={8} />
       </Section>
 
-      <CreateStudentDrawer
-        open={drawer}
-        onClose={() => setDrawer(false)}
-        structure={structure}
-        onCreated={(s) => {
-          setStudents((prev) => [...prev, s]);
-          toast({ title: 'Étudiant inscrit', description: `${s.firstName} ${s.lastName}`, tone: 'success' });
-        }}
-        onError={() => toast({ title: 'Échec de l’inscription', description: 'Veuillez réessayer.', tone: 'error' })}
-      />
     </AppShell>
   );
 }
@@ -741,233 +725,6 @@ function Section({
         {children}
       </Card>
     </section>
-  );
-}
-
-function CreateStudentDrawer({
-  open,
-  onClose,
-  structure,
-  onCreated,
-  onError,
-}: {
-  open: boolean;
-  onClose: () => void;
-  structure: Structure;
-  onCreated: (s: any) => void;
-  onError: () => void;
-}) {
-  const empty = {
-    firstName: '',
-    lastName: '',
-    email: '',
-    facultyId: '',
-    programId: '',
-    semesterId: '',
-    password: generatePassword(),
-  };
-  const [form, setForm] = useState(empty);
-  const [loading, setLoading] = useState(false);
-
-  const set = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
-
-  // Année universitaire courante : c'est elle qui borne les semestres proposés.
-  const currentYear =
-    structure.academicYears.find((y) => y.isCurrent) ?? structure.academicYears[0] ?? null;
-
-  const facultyOptions = structure.faculties.map((f) => ({ value: f.id, label: f.name }));
-
-  const programOptions = structure.programs
-    .filter((prog) => !form.facultyId || prog.facultyId === form.facultyId)
-    .map((prog) => ({ value: prog.id, label: prog.name }));
-
-  const semesterOptions = structure.semesters
-    .filter(
-      (sem) =>
-        sem.programId === form.programId &&
-        (!currentYear || sem.academicYearId === currentYear.id)
-    )
-    .map((sem) => ({ value: sem.id, label: sem.name }));
-
-  const semesterCourses = structure.courses.filter((c) => c.semesterId === form.semesterId);
-
-  // Sélection par défaut, et resynchronisation dès qu'un choix amont rend le choix aval invalide.
-  useEffect(() => {
-    if (!open) return;
-
-    setForm((prev) => {
-      const facultyId =
-        prev.facultyId && structure.faculties.some((f) => f.id === prev.facultyId)
-          ? prev.facultyId
-          : structure.faculties[0]?.id ?? '';
-
-      const programs = structure.programs.filter((prog) => !facultyId || prog.facultyId === facultyId);
-      const programId =
-        prev.programId && programs.some((prog) => prog.id === prev.programId)
-          ? prev.programId
-          : programs[0]?.id ?? '';
-
-      const semesters = structure.semesters.filter(
-        (sem) => sem.programId === programId && (!currentYear || sem.academicYearId === currentYear.id)
-      );
-      const semesterId =
-        prev.semesterId && semesters.some((sem) => sem.id === prev.semesterId)
-          ? prev.semesterId
-          : semesters[0]?.id ?? '';
-
-      if (facultyId === prev.facultyId && programId === prev.programId && semesterId === prev.semesterId) {
-        return prev;
-      }
-      return { ...prev, facultyId, programId, semesterId };
-    });
-  }, [open, structure, form.facultyId, form.programId, currentYear]);
-
-  const canSubmit = Boolean(form.programId && form.semesterId);
-
-  const submit = async () => {
-    if (!form.firstName || !form.lastName || !form.email || !canSubmit) {
-      onError();
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await fetch('/api/students/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: form.firstName,
-          lastName: form.lastName,
-          email: form.email,
-          password: form.password,
-          programId: form.programId,
-          semesterId: form.semesterId,
-        }),
-      });
-      if (!res.ok) throw new Error();
-      const created = await res.json();
-      onCreated(created);
-      setForm({ ...empty, password: generatePassword() });
-      onClose();
-    } catch {
-      onError();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Drawer
-      open={open}
-      onClose={onClose}
-      title="Inscrire un étudiant"
-      description="Le compte est créé instantanément"
-      icon={<CapIcon size={20} />}
-      footer={
-        <div className="flex items-center justify-end gap-3">
-          <button onClick={onClose} className={buttonClasses('secondary', 'md')}>
-            Annuler
-          </button>
-          <Button onClick={submit} loading={loading} disabled={!canSubmit}>
-            Créer le compte
-          </Button>
-        </div>
-      }
-    >
-      <div className="space-y-5">
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="Prénom" value={form.firstName} onChange={(e) => set('firstName', e.target.value)} placeholder="Awa" />
-          <Input label="Nom" value={form.lastName} onChange={(e) => set('lastName', e.target.value)} placeholder="Diallo" />
-        </div>
-        <Input
-          label="Email"
-          type="email"
-          value={form.email}
-          onChange={(e) => set('email', e.target.value)}
-          placeholder="awa.diallo@universite.africa"
-        />
-
-        <div className="grid grid-cols-3 gap-3">
-          <SelectField label="Faculté" value={form.facultyId} options={facultyOptions} onChange={(v) => set('facultyId', v)} />
-          <SelectField label="Programme" value={form.programId} options={programOptions} onChange={(v) => set('programId', v)} />
-          <SelectField label="Semestre" value={form.semesterId} options={semesterOptions} onChange={(v) => set('semesterId', v)} />
-        </div>
-
-        {!canSubmit && (
-          <p className="text-sm text-amber-600">
-            Aucun programme ou semestre n’est configuré pour l’année en cours : l’inscription est
-            impossible tant que la maquette n’existe pas.
-          </p>
-        )}
-
-        <div>
-          <p className="mb-2 text-sm font-medium text-ink/70">Cours du semestre</p>
-          {semesterCourses.length === 0 ? (
-            <p className="text-sm text-ink/45">Aucun cours n’est encore rattaché à ce semestre.</p>
-          ) : (
-            <div className="grid grid-cols-1 gap-2">
-              {semesterCourses.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center gap-3 rounded-xl border border-hairline bg-white px-3.5 py-2.5 text-left text-sm text-ink/70"
-                >
-                  <span className="grid h-5 w-5 place-items-center rounded-md border border-oca bg-oca text-white">
-                    <CheckIcon size={13} />
-                  </span>
-                  <span className="flex-1">{c.title}</span>
-                  <span className="text-ink/40">{c.credits} cr.</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-xl border border-hairline bg-cloud/60 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-ink/70">Mot de passe généré</p>
-              <p className="mt-0.5 font-mono text-[15px] text-ink">{form.password}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => set('password', generatePassword())}
-              className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-oca shadow-soft transition-colors hover:bg-oca-tint"
-            >
-              Régénérer
-            </button>
-          </div>
-        </div>
-      </div>
-    </Drawer>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-sm font-medium text-ink/70">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-12 w-full rounded-card border border-hairline bg-white px-3 text-[15px] text-ink transition-colors hover:border-ink/20 focus:border-apple focus:outline-none focus:ring-4 focus:ring-apple/15"
-      >
-        {options.length === 0 && <option value="">—</option>}
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 

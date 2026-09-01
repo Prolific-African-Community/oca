@@ -46,9 +46,8 @@ export const roleConfig: Record<string, RoleMeta> = {
     label: 'Administration',
     home: '/admin',
     /**
-     * Structure et professeurs ont leur page ; les étudiants restent une ancre
-     * du tableau de bord tant qu'aucune page ne leur est dédiée. Aucune entrée
-     * ne pointe vers une route inexistante.
+     * Chaque entrée mène désormais à une page réelle : structure, étudiants,
+     * professeurs et cours. Aucun lien ne pointe vers une route inexistante.
      */
     nav: [
       { label: 'Pilotage', short: 'Pilotage', href: '/admin', icon: HomeIcon },
@@ -61,7 +60,7 @@ export const roleConfig: Record<string, RoleMeta> = {
       {
         label: 'Étudiants',
         short: 'Étudiants',
-        href: '/admin#etudiants',
+        href: '/admin/students',
         icon: UsersIcon,
       },
       {
