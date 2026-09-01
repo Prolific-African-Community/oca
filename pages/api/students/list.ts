@@ -32,12 +32,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           email: true,
           firstName: true,
           lastName: true,
+          // Tout l'historique : la progression conserve les inscriptions
+          // closes, et l'administrateur doit pouvoir le constater.
           enrollments: {
-            // L'inscription active d'abord : c'est elle qui détermine les
-            // cours visibles. Une inscription close ne doit pas la masquer.
             where: { institutionId: scope.institutionId },
             orderBy: [{ status: 'asc' }, { enrolledAt: 'desc' }],
-            take: 1,
             select: {
               id: true,
               status: true,
@@ -63,7 +62,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // { id, firstName, lastName, email, faculty, program }.
   return res.status(200).json(
     memberships.map(({ user, createdAt, isActive }) => {
-      const enrollment = user.enrollments[0];
+      // Les champs plats décrivent l'inscription active ; l'historique est
+      // fourni à part, pour ne rien changer aux écrans existants.
+      const enrollment =
+        user.enrollments.find((e) => e.status === 'ACTIVE') ??
+        user.enrollments[0];
 
       return {
         id: user.id,
@@ -81,6 +84,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         academicYear: enrollment?.semester.academicYear.name ?? null,
         academicYearId: enrollment?.semester.academicYear.id ?? null,
         isActive,
+        enrollments: user.enrollments.map((e) => ({
+          id: e.id,
+          status: e.status,
+          program: e.program.name,
+          programId: e.programId,
+          semester: e.semester.name,
+          semesterId: e.semesterId,
+          academicYear: e.semester.academicYear.name,
+        })),
         createdAt,
       };
     })

@@ -26,6 +26,8 @@ export const AuditAction = {
   STUDENT_PASSWORD_RESET: 'student.password.reset',
   STUDENT_ENROLLMENT_CREATE: 'student.enrollment.create',
   STUDENT_ENROLLMENT_UPDATE: 'student.enrollment.update',
+  STUDENT_ENROLLMENT_PROGRESS: 'student.enrollment.progress',
+  STUDENT_COHORT_PROGRESS: 'student.cohort.progress',
   TEACHER_CREATE: 'teacher.create',
   TEACHER_UPDATE: 'teacher.update',
   TEACHER_DEACTIVATE: 'teacher.deactivate',

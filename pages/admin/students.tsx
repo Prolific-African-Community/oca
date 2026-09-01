@@ -36,6 +36,15 @@ interface Student {
   semester: string | null
   enrollmentStatus: string | null
   enrollmentId: string | null
+  enrollments: {
+    id: string
+    status: string
+    program: string
+    programId: string
+    semester: string
+    semesterId: string
+    academicYear: string
+  }[]
   programId: string | null
   semesterId: string | null
   academicYear: string | null
@@ -122,6 +131,21 @@ export default function AdminStudentsPage() {
   const [temporary, setTemporary] = useState<{
     email: string
     password: string
+  } | null>(null)
+
+  /** Progression individuelle et progression de cohorte. */
+  const [progressingId, setProgressingId] = useState<string | null>(null)
+  const [historyId, setHistoryId] = useState<string | null>(null)
+  const [cohortKey, setCohortKey] = useState<string | null>(null)
+  const [progressForm, setProgressForm] = useState({
+    programId: '',
+    academicYearId: '',
+    semesterId: '',
+  })
+  const [progressError, setProgressError] = useState('')
+  const [cohortReport, setCohortReport] = useState<{
+    counts: { progressed: number; enrolled: number; unchanged: number; failed: number }
+    results: { studentId: string; outcome: string; message?: string; name?: string }[]
   } | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -222,8 +246,11 @@ export default function AdminStudentsPage() {
     setResettingId(null)
     setTogglingId(null)
     setMovingId(null)
+    setProgressingId(null)
+    setCohortKey(null)
     setEditError('')
     setMoveError('')
+    setProgressError('')
   }
 
   const patch = async (id: string, payload: Record<string, unknown>) => {
@@ -327,11 +354,177 @@ export default function AdminStudentsPage() {
     }
   }
 
+  /**
+   * Faire progresser : l'inscription active est close et une nouvelle est
+   * créée. C'est ce qui distingue ce geste de la correction, qui déplace
+   * l'inscription sur place.
+   */
+  const progressStudent = async (id: string) => {
+    setBusy(true)
+    setProgressError('')
+    try {
+      const response = await fetch(`/api/admin/students/${id}/progression`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(progressForm),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.message || 'Progression impossible')
+
+      closePanels()
+      await load()
+      toast({
+        title:
+          data.outcome === 'UNCHANGED'
+            ? 'Aucun changement'
+            : 'Étudiant passé au semestre suivant',
+        description:
+          data.outcome === 'UNCHANGED'
+            ? 'Cet étudiant est déjà inscrit dans ce semestre.'
+            : 'L’ancienne inscription est marquée comme terminée.',
+        tone: 'success',
+      })
+    } catch (err: any) {
+      setProgressError(err.message)
+      toast({
+        title: 'Progression impossible',
+        description: err.message,
+        tone: 'error',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const progressCohort = async (source: {
+    programId: string
+    semesterId: string
+  }) => {
+    setBusy(true)
+    setProgressError('')
+    setCohortReport(null)
+    try {
+      const response = await fetch('/api/admin/students/cohort-progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceProgramId: source.programId,
+          sourceSemesterId: source.semesterId,
+          targetProgramId: progressForm.programId,
+          targetAcademicYearId: progressForm.academicYearId || undefined,
+          targetSemesterId: progressForm.semesterId,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.message || 'Progression impossible')
+
+      setCohortReport(data)
+      await load()
+      toast({
+        title: 'Cohorte traitée',
+        description: `${data.counts.progressed + data.counts.enrolled} passage(s), ${data.counts.failed} échec(s).`,
+        tone: data.counts.failed > 0 ? 'error' : 'success',
+      })
+    } catch (err: any) {
+      setProgressError(err.message)
+      toast({
+        title: 'Progression impossible',
+        description: err.message,
+        tone: 'error',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   /** Semestres cohérents avec le programme et l'année choisis. */
   const moveSemesters = structure.semesters.filter(
     (sem) =>
       sem.programId === moveForm.programId &&
       (!moveForm.academicYearId || sem.academicYearId === moveForm.academicYearId)
+  )
+
+  const progressSemesters = structure.semesters.filter(
+    (sem) =>
+      sem.programId === progressForm.programId &&
+      (!progressForm.academicYearId ||
+        sem.academicYearId === progressForm.academicYearId)
+  )
+
+  /** Sélecteurs de destination, partagés par les deux progressions. */
+  const targetPickers = (
+    <div className="grid gap-4 sm:grid-cols-3">
+      <label className="block">
+        <span className="mb-2 block text-sm font-medium text-ink/70">
+          Programme
+        </span>
+        <select
+          value={progressForm.programId}
+          onChange={(e) =>
+            setProgressForm((c) => ({
+              ...c,
+              programId: e.target.value,
+              semesterId: '',
+            }))
+          }
+          className="h-12 w-full rounded-card border border-hairline bg-white px-3 text-[15px] text-ink focus:border-apple focus:outline-none focus:ring-4 focus:ring-apple/15"
+        >
+          <option value="">Choisir un programme</option>
+          {structure.programs.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block">
+        <span className="mb-2 block text-sm font-medium text-ink/70">
+          Année universitaire
+        </span>
+        <select
+          value={progressForm.academicYearId}
+          onChange={(e) =>
+            setProgressForm((c) => ({
+              ...c,
+              academicYearId: e.target.value,
+              semesterId: '',
+            }))
+          }
+          className="h-12 w-full rounded-card border border-hairline bg-white px-3 text-[15px] text-ink focus:border-apple focus:outline-none focus:ring-4 focus:ring-apple/15"
+        >
+          <option value="">Toutes les années</option>
+          {structure.academicYears.map((y) => (
+            <option key={y.id} value={y.id}>
+              {y.isCurrent ? `${y.name} · en cours` : y.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block">
+        <span className="mb-2 block text-sm font-medium text-ink/70">
+          Semestre de destination
+        </span>
+        <select
+          value={progressForm.semesterId}
+          onChange={(e) =>
+            setProgressForm((c) => ({ ...c, semesterId: e.target.value }))
+          }
+          className="h-12 w-full rounded-card border border-hairline bg-white px-3 text-[15px] text-ink focus:border-apple focus:outline-none focus:ring-4 focus:ring-apple/15"
+        >
+          <option value="">Choisir un semestre</option>
+          {progressSemesters.map((sem) => (
+            <option key={sem.id} value={sem.id}>
+              {sem.name}
+            </option>
+          ))}
+        </select>
+        {!progressForm.programId && (
+          <span className="text-ink/45 mt-1 block text-xs">
+            Choisissez d’abord un programme
+          </span>
+        )}
+      </label>
+    </div>
   )
 
   return (
@@ -501,6 +694,48 @@ export default function AdminStudentsPage() {
           </p>
         </div>
 
+        {cohortReport && (
+          <div className="mb-4 rounded-card border border-hairline bg-cloud/50 p-4">
+            <p className="text-[15px] font-medium text-ink">
+              Résultat de la progression
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Badge tone="success">
+                {cohortReport.counts.progressed + cohortReport.counts.enrolled}{' '}
+                passage(s)
+              </Badge>
+              {cohortReport.counts.unchanged > 0 && (
+                <Badge tone="neutral">
+                  {cohortReport.counts.unchanged} sans changement
+                </Badge>
+              )}
+              {cohortReport.counts.failed > 0 && (
+                <Badge tone="warning">
+                  {cohortReport.counts.failed} échec(s)
+                </Badge>
+              )}
+            </div>
+            {/* Chaque cas non traité est nommé : rien ne disparaît en silence. */}
+            {cohortReport.results.some((r) => r.outcome !== 'PROGRESSED') && (
+              <ul className="mt-3 space-y-1 text-sm">
+                {cohortReport.results
+                  .filter((r) => r.outcome !== 'PROGRESSED')
+                  .map((r) => (
+                    <li key={r.studentId} className="text-amber-700">
+                      {r.name ?? r.studentId} — {r.message ?? r.outcome}
+                    </li>
+                  ))}
+              </ul>
+            )}
+            <button
+              onClick={() => setCohortReport(null)}
+              className="text-ink/50 mt-3 text-sm font-medium hover:underline"
+            >
+              Fermer
+            </button>
+          </div>
+        )}
+
         {cohorts.length === 0 ? (
           <p className="text-ink/45 text-sm">
             Aucune cohorte : inscrivez des étudiants dans un semestre.
@@ -525,9 +760,7 @@ export default function AdminStudentsPage() {
                   </Badge>
                   <button
                     onClick={() => {
-                      setProgramFilter(
-                        cohort.students[0]?.programId ?? ''
-                      )
+                      setProgramFilter(cohort.students[0]?.programId ?? '')
                       setQuery(cohort.semester)
                       setFilter('all')
                     }}
@@ -535,7 +768,91 @@ export default function AdminStudentsPage() {
                   >
                     Voir
                   </button>
+                  <button
+                    onClick={() => {
+                      closePanels()
+                      setCohortReport(null)
+                      setCohortKey(cohort.key)
+                      setProgressForm({
+                        programId: cohort.students[0]?.programId ?? '',
+                        academicYearId: '',
+                        semesterId: '',
+                      })
+                    }}
+                    className="text-sm font-medium text-apple hover:underline"
+                  >
+                    Faire progresser
+                  </button>
                 </div>
+
+                {cohortKey === cohort.key && (
+                  <div className="mt-3 rounded-card border border-apple/30 bg-oca-tint/30 p-4">
+                    <p className="text-[15px] font-medium text-ink">
+                      Faire progresser cette cohorte
+                    </p>
+                    <p className="text-ink/50 mt-0.5 text-sm">
+                      Départ : {cohort.program} · {cohort.semester} ·{' '}
+                      {cohort.academicYear} — {cohort.students.length} étudiant
+                      {cohort.students.length > 1 ? 's actifs' : ' actif'}
+                    </p>
+
+                    <div className="mt-4">{targetPickers}</div>
+
+                    <p className="mt-3 rounded-card border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                      Cette action va clôturer l’inscription active de ces
+                      étudiants et créer une nouvelle inscription active. Les
+                      cours visibles seront ceux du nouveau semestre ; la
+                      progression déjà enregistrée n’est pas supprimée.
+                    </p>
+
+                    <details className="mt-3">
+                      <summary className="text-ink/60 cursor-pointer text-sm font-medium">
+                        Étudiants concernés ({cohort.students.length})
+                      </summary>
+                      <ul className="mt-2 space-y-0.5 text-sm text-ink/60">
+                        {cohort.students.map((student) => (
+                          <li key={student.id}>
+                            {displayName(student)} · {student.email}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+
+                    {progressError && (
+                      <div
+                        role="alert"
+                        className="mt-3 rounded-card border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600"
+                      >
+                        {progressError}
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <Button
+                        size="md"
+                        loading={busy}
+                        disabled={
+                          !progressForm.programId || !progressForm.semesterId
+                        }
+                        onClick={() =>
+                          progressCohort({
+                            programId: cohort.students[0]?.programId ?? '',
+                            semesterId: cohort.students[0]?.semesterId ?? '',
+                          })
+                        }
+                      >
+                        Faire progresser {cohort.students.length} étudiant
+                        {cohort.students.length > 1 ? 's' : ''}
+                      </Button>
+                      <button
+                        onClick={closePanels}
+                        className="text-ink/60 text-sm font-medium hover:underline"
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -720,6 +1037,29 @@ export default function AdminStudentsPage() {
                     <button
                       onClick={() => {
                         closePanels()
+                        setProgressingId(student.id)
+                        setProgressForm({
+                          programId: student.programId ?? '',
+                          academicYearId: '',
+                          semesterId: '',
+                        })
+                      }}
+                      className="text-sm font-medium text-apple hover:underline"
+                    >
+                      Faire progresser
+                    </button>
+                    <button
+                      onClick={() =>
+                        setHistoryId(historyId === student.id ? null : student.id)
+                      }
+                      className="text-ink/50 text-sm font-medium hover:underline"
+                    >
+                      {historyId === student.id ? 'Masquer' : 'Parcours'} (
+                      {student.enrollments?.length ?? 0})
+                    </button>
+                    <button
+                      onClick={() => {
+                        closePanels()
                         setResettingId(student.id)
                       }}
                       className="text-ink/50 text-sm font-medium hover:underline"
@@ -739,6 +1079,90 @@ export default function AdminStudentsPage() {
                       {student.isActive ? 'Retirer l’accès' : 'Rétablir l’accès'}
                     </button>
                   </div>
+
+                  {historyId === student.id && (
+                    <ul className="mt-3 space-y-1 border-t border-hairline pt-3">
+                      {(student.enrollments ?? []).length === 0 && (
+                        <li className="text-ink/45 text-sm">
+                          Aucune inscription enregistrée.
+                        </li>
+                      )}
+                      {(student.enrollments ?? []).map((enrollment) => {
+                        const active = enrollment.status === 'ACTIVE'
+                        return (
+                          <li
+                            key={enrollment.id}
+                            className={
+                              'flex flex-wrap items-center gap-2 px-1 text-sm ' +
+                              (active ? 'text-ink' : 'text-ink/45')
+                            }
+                          >
+                            <Badge tone={active ? 'success' : 'neutral'}>
+                              {active ? 'En cours' : 'Terminée'}
+                            </Badge>
+                            <span className="min-w-0 flex-1 truncate">
+                              {enrollment.program} · {enrollment.semester} ·{' '}
+                              {enrollment.academicYear}
+                            </span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+
+                  {progressingId === student.id && (
+                    <div className="mt-3 rounded-card border border-apple/30 bg-oca-tint/30 p-4">
+                      <p className="text-[15px] font-medium text-ink">
+                        Faire progresser {displayName(student)}
+                      </p>
+                      <p className="text-ink/50 mb-1 mt-0.5 text-sm">
+                        Utilisez cette action pour passer l’étudiant au semestre
+                        ou à l’année suivante en conservant l’historique.
+                      </p>
+                      <p className="text-ink/50 mb-3 text-sm">
+                        Actuellement :{' '}
+                        {student.enrollmentStatus
+                          ? `${student.program} · ${student.semester} · ${student.academicYear}`
+                          : 'aucune inscription active'}
+                      </p>
+
+                      {targetPickers}
+
+                      <p className="mt-3 rounded-card border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        L’ancien rattachement sera marqué comme terminé. Les
+                        cours visibles seront ceux du nouveau semestre. La
+                        progression déjà enregistrée n’est pas supprimée.
+                      </p>
+
+                      {progressError && (
+                        <div
+                          role="alert"
+                          className="mt-3 rounded-card border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600"
+                        >
+                          {progressError}
+                        </div>
+                      )}
+
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <Button
+                          size="md"
+                          loading={busy}
+                          disabled={
+                            !progressForm.programId || !progressForm.semesterId
+                          }
+                          onClick={() => progressStudent(student.id)}
+                        >
+                          Confirmer la progression
+                        </Button>
+                        <button
+                          onClick={closePanels}
+                          className="text-ink/60 text-sm font-medium hover:underline"
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {editingId === student.id && (
                     <div className="mt-3 rounded-card border border-apple/30 bg-oca-tint/30 p-4">
@@ -805,7 +1229,12 @@ export default function AdminStudentsPage() {
                   {movingId === student.id && (
                     <div className="mt-3 rounded-card border border-apple/30 bg-oca-tint/30 p-4">
                       <p className="mb-1 text-[15px] font-medium text-ink">
-                        Rattachement de {displayName(student)}
+                        Corriger le rattachement de {displayName(student)}
+                      </p>
+                      <p className="text-ink/50 mb-1 text-sm">
+                        Utilisez cette action pour corriger une erreur de
+                        rattachement. Pour un passage de semestre, utilisez
+                        « Faire progresser ».
                       </p>
                       <p className="text-ink/50 mb-3 text-sm">
                         Actuellement :{' '}
