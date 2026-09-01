@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardHeader } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
@@ -196,6 +196,7 @@ function SectionShell({
   label,
   missing,
   measure,
+  dirty,
   open,
   onToggle,
   children,
@@ -203,6 +204,7 @@ function SectionShell({
   label: string
   missing: boolean
   measure: string
+  dirty: boolean
   open: boolean
   onToggle: () => void
   children: React.ReactNode
@@ -225,12 +227,23 @@ function SectionShell({
         ) : (
           <span className="text-ink/40 text-xs">{measure}</span>
         )}
+        {/* Repliée ou non, une section modifiée doit se signaler. */}
+        {dirty && <Badge tone="blue">Non enregistré</Badge>}
         <span className="text-ink/35 ml-auto shrink-0 text-xs">
           {open ? 'Replier' : 'Modifier'}
         </span>
       </button>
 
-      {open && <div className="mt-4">{children}</div>}
+      {open && (
+        <div className="mt-4">
+          {dirty && (
+            <p className="mb-3 text-sm text-apple-600">
+              Modifications locales non enregistrées.
+            </p>
+          )}
+          {children}
+        </div>
+      )}
     </Card>
   )
 }
@@ -239,6 +252,7 @@ function SectionShell({
 function SectionActions({
   sectionKey,
   empty,
+  dirty,
   saving,
   aiBusy,
   onSave,
@@ -251,6 +265,7 @@ function SectionActions({
 }: {
   sectionKey: SectionKey
   empty: boolean
+  dirty: boolean
   saving: boolean
   aiBusy: string | null
   onSave: () => void
@@ -267,7 +282,13 @@ function SectionActions({
   return (
     <>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-hairline pt-3">
-        <Button size="md" loading={saving} onClick={onSave}>
+        {/* Le bouton ne se met en avant que s'il y a réellement à enregistrer. */}
+        <Button
+          size="md"
+          variant={dirty ? 'primary' : 'secondary'}
+          loading={saving}
+          onClick={onSave}
+        >
           Enregistrer
         </Button>
 
@@ -312,7 +333,7 @@ function SectionActions({
           onClick={onReset}
           className="text-ink/50 text-sm font-medium hover:underline"
         >
-          Rétablir
+          {dirty ? 'Abandonner mes modifications' : 'Rétablir'}
         </button>
 
         {!empty && !confirmClear && (
@@ -375,6 +396,7 @@ export function LessonSectionEditor({
   onToast,
   onPublish,
   onDelete,
+  onDirtyChange,
 }: {
   lesson: EditorLesson
   moduleTitle: string
@@ -388,6 +410,8 @@ export function LessonSectionEditor({
   onDelete: (
     confirm?: boolean
   ) => Promise<{ needsConfirm: boolean; message?: string } | void>
+  /** Remonte le nombre de sections modifiées, pour protéger la navigation. */
+  onDirtyChange?: (count: number) => void
 }) {
   const initial = lesson.structuredContent ?? {
     ...EMPTY,
@@ -437,6 +461,42 @@ export function LessonSectionEditor({
   // Suppression : jamais en un clic. On demande, puis on confirme.
   const [deleteWarning, setDeleteWarning] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  /**
+   * Une section est « sale » quand la saisie diffère du contenu renvoyé par le
+   * serveur. `initial` est recalculé à chaque rendu depuis les props : après un
+   * enregistrement réussi, la page recharge, les props changent, et l'état sale
+   * disparaît de lui-même — sans drapeau à maintenir à la main.
+   */
+  const dirtySections = SECTION_ORDER.filter((key) => {
+    const a = draft[key]
+    const b = initial[key]
+    if (Array.isArray(a) && Array.isArray(b)) {
+      const clean = (list: string[]) =>
+        list.map((item) => item.trim()).filter(Boolean)
+      return JSON.stringify(clean(a)) !== JSON.stringify(clean(b))
+    }
+    return String(a) !== String(b)
+  })
+
+  const dirtyCount = dirtySections.length
+  const isDirty = (key: SectionKey) => dirtySections.includes(key)
+
+  // La page a besoin de le savoir pour protéger le changement de leçon.
+  useEffect(() => {
+    onDirtyChange?.(dirtyCount)
+  }, [dirtyCount, onDirtyChange])
+
+  // Fermeture ou rechargement de l'onglet : avertissement du navigateur.
+  useEffect(() => {
+    if (dirtyCount === 0) return
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [dirtyCount])
 
   const isStructured = lesson.structuredContent !== null
   const published = lesson.status === 'PUBLISHED'
@@ -827,6 +887,15 @@ export function LessonSectionEditor({
         </div>
       )}
 
+      {dirtyCount > 0 && (
+        <div className="rounded-card border border-apple/20 bg-apple/5 px-4 py-3 text-sm text-apple-600">
+          {dirtyCount} section
+          {dirtyCount > 1 ? 's ont' : ' a'} des modifications non enregistrées :{' '}
+          {dirtySections.map((key) => SECTION_LABELS[key]).join(', ')}.
+          Enregistrez-les section par section ; changer de leçon les abandonnera.
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
         <p className="text-ink/50 text-sm">
           Sections de la leçon — {openSections.size}/{SECTION_ORDER.length}{' '}
@@ -874,6 +943,7 @@ export function LessonSectionEditor({
           label={section.label}
           missing={lesson.quality.missingSections.includes(section.key)}
           measure={`${draft[section.key].trim().length} caractères`}
+          dirty={isDirty(section.key)}
           open={openSections.has(section.key)}
           onToggle={() => toggleSection(section.key)}
         >
@@ -885,6 +955,7 @@ export function LessonSectionEditor({
           <SectionActions
             sectionKey={section.key}
             empty={!draft[section.key].trim()}
+            dirty={isDirty(section.key)}
             saving={saving === section.key}
             aiBusy={aiBusy}
             onSave={() => saveSection(section.key, draft[section.key])}
@@ -908,6 +979,7 @@ export function LessonSectionEditor({
           measure={`${
             draft[section.key].filter((item) => item.trim()).length
           } élément(s)`}
+          dirty={isDirty(section.key)}
           open={openSections.has(section.key)}
           onToggle={() => toggleSection(section.key)}
         >
@@ -922,6 +994,7 @@ export function LessonSectionEditor({
           <SectionActions
             sectionKey={section.key}
             empty={draft[section.key].filter((i) => i.trim()).length === 0}
+            dirty={isDirty(section.key)}
             saving={saving === section.key}
             aiBusy={aiBusy}
             onSave={() =>

@@ -47,6 +47,13 @@ export default function CourseEditorPage() {
   const [focusedModuleId, setFocusedModuleId] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
+  /**
+   * Nombre de sections modifiées dans la leçon ouverte, remonté par l'éditeur.
+   * Changer de leçon le remonte : les saisies non enregistrées seraient
+   * perdues, on demande donc confirmation plutôt que de les effacer en silence.
+   */
+  const [dirtyCount, setDirtyCount] = useState(0)
+
   // `?build=ai` ouvre le panneau de construction ; il reste ensuite pilotable
   // depuis le bouton du Studio, sans dépendre de l'URL.
   const [building, setBuilding] = useState(false)
@@ -254,6 +261,21 @@ export default function CourseEditorPage() {
     }
   }
 
+  /** Changement de leçon : on prévient avant d'abandonner des saisies. */
+  const selectWithGuard = (id: string, ownerModuleId?: string) => {
+    if (id === selectedId) return
+    if (
+      dirtyCount > 0 &&
+      !window.confirm(
+        `${dirtyCount} section(s) de la leçon en cours ne sont pas enregistrées. Changer de leçon abandonnera ces modifications. Continuer ?`
+      )
+    ) {
+      return
+    }
+    setDirtyCount(0)
+    select(id, ownerModuleId)
+  }
+
   return (
     <AppShell
       role="teacher"
@@ -340,7 +362,7 @@ export default function CourseEditorPage() {
                   selectedId={selectedId}
                   focused={module.id === focusedModuleId}
                   busy={busy}
-                  onSelect={(id) => select(id, module.id)}
+                  onSelect={(id) => selectWithGuard(id, module.id)}
                   onPublishModule={(payload, key, label) =>
                     publish(
                       `/api/teacher/modules/${module.id}/publish`,
@@ -431,6 +453,7 @@ export default function CourseEditorPage() {
                       confirm
                     )
                   }
+                  onDirtyChange={setDirtyCount}
                   />
                 </div>
               ) : (
