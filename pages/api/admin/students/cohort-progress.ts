@@ -106,8 +106,13 @@ export default async function handler(
     : members
 
   if (selected.length === 0) {
+    // Deux causes bien différentes : une cohorte réellement vide, ou une
+    // sélection qui ne recoupe aucun de ses membres actifs.
     return res.status(400).json({
-      message: 'Aucun étudiant actif dans cette cohorte.',
+      message:
+        members.length === 0
+          ? 'Aucun étudiant actif dans cette cohorte.'
+          : 'Aucun des étudiants sélectionnés ne fait partie de cette cohorte.',
       results: [],
     })
   }

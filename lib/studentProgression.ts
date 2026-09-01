@@ -184,3 +184,100 @@ export async function cohortStudents(
     },
   })
 }
+
+/* ------------------------------------------------- annulation ------------ */
+
+/**
+ * Réouverture d'une inscription close : l'annulation d'une progression.
+ *
+ * Le statut appliqué à l'inscription qu'on quitte mérite d'être explicité.
+ * `COMPLETED` signifie « l'étudiant a suivi ce semestre » ; or une progression
+ * annulée n'a jamais eu lieu du point de vue académique. L'inscription
+ * abandonnée reçoit donc **`WITHDRAWN`**, qui dit exactement cela :
+ * rattachement retiré, pas semestre accompli. Le parcours reste lisible — on
+ * distingue un semestre validé d'une erreur corrigée.
+ *
+ * Rien n'est supprimé : ni l'inscription, ni la progression pédagogique.
+ */
+export interface ReopenResult {
+  outcome: 'REOPENED' | 'UNCHANGED' | 'CONFLICT' | 'NOT_FOUND'
+  message?: string
+  reopened?: { id: string; semesterId: string } | null
+  closed?: { id: string; semesterId: string; status: EnrollmentStatus } | null
+}
+
+export async function reopenEnrollment(
+  institutionId: string,
+  studentId: string,
+  enrollmentIdToReopen: string,
+  expectedCurrentEnrollmentId?: string
+): Promise<ReopenResult> {
+  const enrollments = await prisma.enrollment.findMany({
+    where: { userId: studentId, institutionId },
+    select: { id: true, status: true, semesterId: true },
+  })
+
+  const target = enrollments.find((e) => e.id === enrollmentIdToReopen)
+  if (!target) {
+    return {
+      outcome: 'NOT_FOUND',
+      message: 'Inscription introuvable pour cet étudiant.',
+    }
+  }
+
+  if (target.status === EnrollmentStatus.ACTIVE) {
+    return {
+      outcome: 'UNCHANGED',
+      message: 'Cette inscription est déjà active.',
+      reopened: { id: target.id, semesterId: target.semesterId },
+    }
+  }
+
+  const actives = enrollments.filter(
+    (e) => e.status === EnrollmentStatus.ACTIVE
+  )
+
+  // Garde-fou d'accord : si l'appelant annonce l'inscription active qu'il
+  // pense fermer et qu'elle a changé entre-temps, on refuse plutôt que
+  // d'agir sur un état différent de celui affiché.
+  if (
+    expectedCurrentEnrollmentId &&
+    !actives.some((e) => e.id === expectedCurrentEnrollmentId)
+  ) {
+    return {
+      outcome: 'CONFLICT',
+      message:
+        'L’inscription active a changé depuis l’affichage. Rechargez la page.',
+    }
+  }
+
+  const closedList = await prisma.$transaction(async (tx) => {
+    // Toutes les inscriptions actives sont fermées : deux inscriptions
+    // actives cumuleraient les cours de deux semestres.
+    for (const active of actives) {
+      await tx.enrollment.update({
+        where: { id: active.id },
+        data: { status: EnrollmentStatus.WITHDRAWN },
+      })
+    }
+
+    await tx.enrollment.update({
+      where: { id: target.id },
+      data: { status: EnrollmentStatus.ACTIVE },
+    })
+
+    return actives
+  })
+
+  return {
+    outcome: 'REOPENED',
+    reopened: { id: target.id, semesterId: target.semesterId },
+    closed: closedList[0]
+      ? {
+          id: closedList[0].id,
+          semesterId: closedList[0].semesterId,
+          status: EnrollmentStatus.WITHDRAWN,
+        }
+      : null,
+  }
+}

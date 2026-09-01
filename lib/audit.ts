@@ -28,6 +28,7 @@ export const AuditAction = {
   STUDENT_ENROLLMENT_UPDATE: 'student.enrollment.update',
   STUDENT_ENROLLMENT_PROGRESS: 'student.enrollment.progress',
   STUDENT_COHORT_PROGRESS: 'student.cohort.progress',
+  STUDENT_ENROLLMENT_REOPEN: 'student.enrollment.reopen',
   TEACHER_CREATE: 'teacher.create',
   TEACHER_UPDATE: 'teacher.update',
   TEACHER_DEACTIVATE: 'teacher.deactivate',

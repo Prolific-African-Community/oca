@@ -143,9 +143,18 @@ export default function AdminStudentsPage() {
     semesterId: '',
   })
   const [progressError, setProgressError] = useState('')
+  /** Sélection par étudiant dans la cohorte, et confirmation de réouverture. */
+  const [cohortSelection, setCohortSelection] = useState<Set<string>>(new Set())
+  const [cohortQuery, setCohortQuery] = useState('')
+  const [reopening, setReopening] = useState<{
+    studentId: string
+    enrollmentId: string
+  } | null>(null)
   const [cohortReport, setCohortReport] = useState<{
     counts: { progressed: number; enrolled: number; unchanged: number; failed: number }
     results: { studentId: string; outcome: string; message?: string; name?: string }[]
+    selected?: number
+    unselected?: number
   } | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -248,6 +257,7 @@ export default function AdminStudentsPage() {
     setMovingId(null)
     setProgressingId(null)
     setCohortKey(null)
+    setReopening(null)
     setEditError('')
     setMoveError('')
     setProgressError('')
@@ -396,10 +406,60 @@ export default function AdminStudentsPage() {
     }
   }
 
-  const progressCohort = async (source: {
-    programId: string
-    semesterId: string
-  }) => {
+  /**
+   * Annuler une progression : l'inscription close redevient active, celle
+   * qu'on quitte passe en « retirée ». Aucune suppression.
+   */
+  const reopen = async (
+    studentId: string,
+    enrollmentId: string,
+    currentEnrollmentId: string | null
+  ) => {
+    setBusy(true)
+    try {
+      const response = await fetch(
+        `/api/admin/students/${studentId}/reopen-enrollment`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enrollmentIdToReopen: enrollmentId,
+            currentEnrollmentId: currentEnrollmentId ?? undefined,
+          }),
+        }
+      )
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.message || 'Réouverture impossible')
+
+      setReopening(null)
+      await load()
+      toast({
+        title:
+          data.outcome === 'UNCHANGED'
+            ? 'Aucun changement'
+            : 'Inscription rouverte',
+        description:
+          data.outcome === 'UNCHANGED'
+            ? data.message
+            : 'Le semestre précédent est de nouveau actif.',
+        tone: 'success',
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Réouverture impossible',
+        description: err.message,
+        tone: 'error',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const progressCohort = async (
+    source: { programId: string; semesterId: string },
+    selected: number,
+    unselected: number
+  ) => {
     setBusy(true)
     setProgressError('')
     setCohortReport(null)
@@ -413,12 +473,14 @@ export default function AdminStudentsPage() {
           targetProgramId: progressForm.programId,
           targetAcademicYearId: progressForm.academicYearId || undefined,
           targetSemesterId: progressForm.semesterId,
+          // Seuls les étudiants cochés partent ; les autres restent en place.
+          studentIds: Array.from(cohortSelection),
         }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.message || 'Progression impossible')
 
-      setCohortReport(data)
+      setCohortReport({ ...data, selected, unselected })
       await load()
       toast({
         title: 'Cohorte traitée',
@@ -704,6 +766,17 @@ export default function AdminStudentsPage() {
                 {cohortReport.counts.progressed + cohortReport.counts.enrolled}{' '}
                 passage(s)
               </Badge>
+              {typeof cohortReport.selected === 'number' && (
+                <Badge tone="neutral">
+                  {cohortReport.selected} sélectionné(s)
+                </Badge>
+              )}
+              {typeof cohortReport.unselected === 'number' &&
+                cohortReport.unselected > 0 && (
+                  <Badge tone="neutral">
+                    {cohortReport.unselected} laissé(s) en place
+                  </Badge>
+                )}
               {cohortReport.counts.unchanged > 0 && (
                 <Badge tone="neutral">
                   {cohortReport.counts.unchanged} sans changement
@@ -773,6 +846,12 @@ export default function AdminStudentsPage() {
                       closePanels()
                       setCohortReport(null)
                       setCohortKey(cohort.key)
+                      setCohortQuery('')
+                      // Tout le monde est coché par défaut : exclure est
+                      // l'exception, pas la règle.
+                      setCohortSelection(
+                        new Set(cohort.students.map((x) => x.id))
+                      )
                       setProgressForm({
                         programId: cohort.students[0]?.programId ?? '',
                         academicYearId: '',
@@ -799,24 +878,94 @@ export default function AdminStudentsPage() {
                     <div className="mt-4">{targetPickers}</div>
 
                     <p className="mt-3 rounded-card border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                      Cette action va clôturer l’inscription active de ces
-                      étudiants et créer une nouvelle inscription active. Les
-                      cours visibles seront ceux du nouveau semestre ; la
-                      progression déjà enregistrée n’est pas supprimée.
+                      Cette action va clôturer l’inscription active des
+                      étudiants sélectionnés et créer une nouvelle inscription
+                      active. Les étudiants non sélectionnés resteront dans la
+                      cohorte actuelle. Les cours visibles seront ceux du
+                      nouveau semestre ; la progression déjà enregistrée n’est
+                      pas supprimée.
                     </p>
 
-                    <details className="mt-3">
-                      <summary className="text-ink/60 cursor-pointer text-sm font-medium">
-                        Étudiants concernés ({cohort.students.length})
-                      </summary>
-                      <ul className="mt-2 space-y-0.5 text-sm text-ink/60">
-                        {cohort.students.map((student) => (
-                          <li key={student.id}>
-                            {displayName(student)} · {student.email}
-                          </li>
-                        ))}
+                    <div className="mt-3 rounded-card border border-hairline bg-white p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-ink">
+                          {cohortSelection.size} sélectionné
+                          {cohortSelection.size > 1 ? 's' : ''} ·{' '}
+                          {cohort.students.length - cohortSelection.size} exclu
+                          {cohort.students.length - cohortSelection.size > 1
+                            ? 's'
+                            : ''}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            onClick={() =>
+                              setCohortSelection(
+                                new Set(cohort.students.map((x) => x.id))
+                              )
+                            }
+                            className="text-sm font-medium text-apple hover:underline"
+                          >
+                            Tout sélectionner
+                          </button>
+                          <button
+                            onClick={() => setCohortSelection(new Set())}
+                            className="text-ink/50 text-sm font-medium hover:underline"
+                          >
+                            Tout désélectionner
+                          </button>
+                        </div>
+                      </div>
+
+                      <input
+                        value={cohortQuery}
+                        onChange={(e) => setCohortQuery(e.target.value)}
+                        placeholder="Filtrer dans la cohorte"
+                        className="mb-3 h-11 w-full rounded-card border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/35 focus:border-apple focus:outline-none focus:ring-4 focus:ring-apple/15"
+                      />
+
+                      <ul className="max-h-56 space-y-1 overflow-y-auto">
+                        {cohort.students
+                          .filter((student) =>
+                            cohortQuery.trim()
+                              ? `${displayName(student)} ${student.email}`
+                                  .toLocaleLowerCase('fr')
+                                  .includes(
+                                    cohortQuery.trim().toLocaleLowerCase('fr')
+                                  )
+                              : true
+                          )
+                          .map((student) => (
+                            <li key={student.id}>
+                              <label className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2 py-1.5 text-sm transition-colors hover:bg-cloud">
+                                <input
+                                  type="checkbox"
+                                  checked={cohortSelection.has(student.id)}
+                                  onChange={(e) =>
+                                    setCohortSelection((current) => {
+                                      const next = new Set(current)
+                                      if (e.target.checked) next.add(student.id)
+                                      else next.delete(student.id)
+                                      return next
+                                    })
+                                  }
+                                  className="h-4 w-4"
+                                />
+                                <span className="min-w-0 flex-1 truncate text-ink/75">
+                                  {displayName(student)}
+                                </span>
+                                <span className="text-ink/40 truncate text-xs">
+                                  {student.email}
+                                </span>
+                              </label>
+                            </li>
+                          ))}
                       </ul>
-                    </details>
+
+                      <p className="text-ink/45 mt-3 text-xs">
+                        Décochez les étudiants qui ne passent pas — redoublants,
+                        absents, cas particuliers.
+                      </p>
+                    </div>
 
                     {progressError && (
                       <div
@@ -832,18 +981,29 @@ export default function AdminStudentsPage() {
                         size="md"
                         loading={busy}
                         disabled={
-                          !progressForm.programId || !progressForm.semesterId
+                          !progressForm.programId ||
+                          !progressForm.semesterId ||
+                          cohortSelection.size === 0
                         }
                         onClick={() =>
-                          progressCohort({
-                            programId: cohort.students[0]?.programId ?? '',
-                            semesterId: cohort.students[0]?.semesterId ?? '',
-                          })
+                          progressCohort(
+                            {
+                              programId: cohort.students[0]?.programId ?? '',
+                              semesterId: cohort.students[0]?.semesterId ?? '',
+                            },
+                            cohortSelection.size,
+                            cohort.students.length - cohortSelection.size
+                          )
                         }
                       >
-                        Faire progresser {cohort.students.length} étudiant
-                        {cohort.students.length > 1 ? 's' : ''}
+                        Faire progresser {cohortSelection.size} étudiant
+                        {cohortSelection.size > 1 ? 's' : ''}
                       </Button>
+                      {cohortSelection.size === 0 && (
+                        <span className="text-ink/50 text-sm">
+                          Sélectionnez au moins un étudiant.
+                        </span>
+                      )}
                       <button
                         onClick={closePanels}
                         className="text-ink/60 text-sm font-medium hover:underline"
@@ -1089,21 +1249,87 @@ export default function AdminStudentsPage() {
                       )}
                       {(student.enrollments ?? []).map((enrollment) => {
                         const active = enrollment.status === 'ACTIVE'
+                        const currentActive = (student.enrollments ?? []).find(
+                          (e) => e.status === 'ACTIVE'
+                        )
+                        // On ne propose la réouverture que s'il y a bien une
+                        // autre inscription active à refermer.
+                        const reopenable = !active && Boolean(currentActive)
+
                         return (
-                          <li
-                            key={enrollment.id}
-                            className={
-                              'flex flex-wrap items-center gap-2 px-1 text-sm ' +
-                              (active ? 'text-ink' : 'text-ink/45')
-                            }
-                          >
-                            <Badge tone={active ? 'success' : 'neutral'}>
-                              {active ? 'En cours' : 'Terminée'}
-                            </Badge>
-                            <span className="min-w-0 flex-1 truncate">
-                              {enrollment.program} · {enrollment.semester} ·{' '}
-                              {enrollment.academicYear}
-                            </span>
+                          <li key={enrollment.id}>
+                            <div
+                              className={
+                                'flex flex-wrap items-center gap-2 px-1 text-sm ' +
+                                (active ? 'text-ink' : 'text-ink/45')
+                              }
+                            >
+                              <Badge tone={active ? 'success' : 'neutral'}>
+                                {active
+                                  ? 'En cours'
+                                  : enrollment.status === 'WITHDRAWN'
+                                  ? 'Retirée'
+                                  : 'Terminée'}
+                              </Badge>
+                              <span className="min-w-0 flex-1 truncate">
+                                {enrollment.program} · {enrollment.semester} ·{' '}
+                                {enrollment.academicYear}
+                              </span>
+                              {reopenable &&
+                                reopening?.enrollmentId !== enrollment.id && (
+                                  <button
+                                    onClick={() =>
+                                      setReopening({
+                                        studentId: student.id,
+                                        enrollmentId: enrollment.id,
+                                      })
+                                    }
+                                    className="shrink-0 text-sm font-medium text-apple hover:underline"
+                                  >
+                                    Rouvrir
+                                  </button>
+                                )}
+                              {!active && !currentActive && (
+                                <span className="text-ink/35 shrink-0 text-xs">
+                                  Impossible à rouvrir : aucune inscription
+                                  active à refermer
+                                </span>
+                              )}
+                            </div>
+
+                            {reopening?.enrollmentId === enrollment.id && (
+                              <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                                <p className="text-sm text-amber-800">
+                                  Rouvrir « {enrollment.semester} » ? Ce
+                                  semestre redeviendra actif, et{' '}
+                                  {currentActive?.semester} cessera de l’être.
+                                  Les cours visibles changeront en conséquence.
+                                  Aucune inscription n’est supprimée, et la
+                                  progression déjà enregistrée est conservée.
+                                </p>
+                                <div className="mt-2.5 flex items-center gap-3">
+                                  <Button
+                                    size="md"
+                                    loading={busy}
+                                    onClick={() =>
+                                      reopen(
+                                        student.id,
+                                        enrollment.id,
+                                        currentActive?.id ?? null
+                                      )
+                                    }
+                                  >
+                                    Oui, rouvrir
+                                  </Button>
+                                  <button
+                                    onClick={() => setReopening(null)}
+                                    className="text-ink/60 text-sm font-medium hover:underline"
+                                  >
+                                    Annuler
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </li>
                         )
                       })}
