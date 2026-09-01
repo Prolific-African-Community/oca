@@ -17,6 +17,8 @@ import { prisma } from './prisma'
 export const AuditAction = {
   INSTITUTION_CREATE: 'institution.create',
   STRUCTURE_CREATE: 'structure.create',
+  STRUCTURE_UPDATE: 'structure.update',
+  STRUCTURE_ARCHIVE: 'structure.archive',
   STUDENT_CREATE: 'student.create',
   TEACHER_CREATE: 'teacher.create',
   ASSIGNMENT_CREATE: 'assignment.create',

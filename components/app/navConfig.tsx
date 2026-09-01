@@ -46,17 +46,16 @@ export const roleConfig: Record<string, RoleMeta> = {
     label: 'Administration',
     home: '/admin',
     /**
-     * Les sections vivent toutes sur le tableau de bord : la navigation
-     * pointe donc des ancres, pas des pages qui n'existent pas encore.
-     * Les anciens liens `/admin/students` et `/admin/programs` renvoyaient
-     * une 404 — mieux vaut aucune entrée qu'une entrée morte.
+     * La structure a sa page ; étudiants et professeurs restent des ancres du
+     * tableau de bord tant qu'aucune page ne leur est dédiée. Aucune entrée
+     * ne pointe vers une route inexistante.
      */
     nav: [
       { label: 'Pilotage', short: 'Pilotage', href: '/admin', icon: HomeIcon },
       {
         label: 'Structure',
         short: 'Structure',
-        href: '/admin#structure',
+        href: '/admin/structure',
         icon: LayersIcon,
       },
       {
@@ -71,7 +70,12 @@ export const roleConfig: Record<string, RoleMeta> = {
         href: '/admin#professeurs',
         icon: CapIcon,
       },
-      { label: 'Cours', short: 'Cours', href: '/admin#cours', icon: BookIcon },
+      {
+        label: 'Cours',
+        short: 'Cours',
+        href: '/admin/structure?tab=course',
+        icon: BookIcon,
+      },
     ],
   },
   superadmin: {

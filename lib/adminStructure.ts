@@ -412,3 +412,354 @@ export async function createStructureEntity(
     throw error;
   }
 }
+
+/* ------------------------------------------------------- correction ------ */
+
+/**
+ * Correction d'un élément de structure déjà créé.
+ *
+ * Trois principes.
+ *
+ * 1. **Rien n'est supprimé.** Les modèles n'ont pas de règle de dépendance
+ *    exprimée pour la suppression : effacer une faculté emporterait ses
+ *    départements, ses programmes et, de proche en proche, des cours suivis
+ *    par des étudiants. Tant qu'un contrôle de dépendances n'existe pas, la
+ *    suppression définitive n'est pas proposée.
+ *
+ * 2. **Seuls les champs sûrs sont modifiables.** Le rattachement d'un
+ *    semestre à un programme, ou d'un cours à un semestre, ne l'est pas :
+ *    l'inscription d'un étudiant est liée au semestre, donc déplacer un cours
+ *    changerait en silence qui y a accès.
+ *
+ * 3. **L'appartenance est revérifiée à chaque fois.** L'identifiant vient du
+ *    client, jamais l'établissement : on refuse un élément d'un autre
+ *    établissement comme s'il n'existait pas.
+ */
+
+/** Entités disposant d'un statut permettant un archivage réversible. */
+export const ARCHIVABLE_ENTITIES: StructureEntity[] = [
+  'program',
+  'academic-year',
+  'semester',
+  'course',
+];
+
+export function isArchivable(entity: StructureEntity): boolean {
+  return ARCHIVABLE_ENTITIES.includes(entity);
+}
+
+/** Erreur d'appartenance : traitée comme une absence, pas comme un refus. */
+export class NotFoundError extends Error {
+  constructor(message = 'Élément introuvable') {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
+/** Vérifie que l'élément relève bien de l'établissement de la session. */
+async function ownedRecord(
+  entity: StructureEntity,
+  institutionId: string,
+  id: string
+): Promise<any> {
+  switch (entity) {
+    case 'faculty':
+      return prisma.faculty.findFirst({ where: { id, institutionId } });
+    case 'department':
+      return prisma.department.findFirst({
+        where: { id, faculty: { institutionId } },
+      });
+    case 'cycle':
+      return prisma.cycle.findFirst({ where: { id, institutionId } });
+    case 'program':
+      return prisma.program.findFirst({ where: { id, institutionId } });
+    case 'academic-year':
+      return prisma.academicYear.findFirst({ where: { id, institutionId } });
+    case 'semester':
+      return prisma.semester.findFirst({
+        where: { id, program: { institutionId } },
+      });
+    case 'course':
+      return prisma.course.findFirst({ where: { id, institutionId } });
+  }
+}
+
+/** N'ajoute au jeu de données que les champs réellement transmis. */
+function pick<T extends Record<string, unknown>>(data: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined)
+  ) as Partial<T>;
+}
+
+const has = (body: Body, field: string) => field in body;
+
+async function updateData(
+  entity: StructureEntity,
+  institutionId: string,
+  body: Body
+): Promise<Record<string, unknown>> {
+  switch (entity) {
+    case 'faculty':
+      return pick({
+        name: has(body, 'name') ? str(body, 'name', 'Le nom') : undefined,
+        code: has(body, 'code') ? code(body) : undefined,
+      });
+
+    case 'department': {
+      let facultyId: string | undefined;
+      if (has(body, 'facultyId')) {
+        const target = await prisma.faculty.findFirst({
+          where: { id: str(body, 'facultyId', 'La faculté'), institutionId },
+          select: { id: true },
+        });
+        if (!target) {
+          throw new ValidationError(
+            'Faculté inconnue pour cet établissement',
+            'facultyId'
+          );
+        }
+        facultyId = target.id;
+      }
+      return pick({
+        name: has(body, 'name') ? str(body, 'name', 'Le nom') : undefined,
+        code: has(body, 'code') ? code(body) : undefined,
+        facultyId,
+      });
+    }
+
+    case 'cycle':
+      return pick({
+        name: has(body, 'name') ? str(body, 'name', 'Le nom') : undefined,
+        code: has(body, 'code') ? code(body) : undefined,
+        level: has(body, 'level')
+          ? enumValue(body, 'level', 'Le niveau', CycleLevel, CycleLevel.LICENCE)
+          : undefined,
+        durationYears: has(body, 'durationYears')
+          ? int(body, 'durationYears', 'La durée', 1, 10)
+          : undefined,
+        totalCredits: has(body, 'totalCredits')
+          ? optionalInt(body, 'totalCredits', 'Les crédits', 0, 1000)
+          : undefined,
+      });
+
+    case 'program': {
+      let cycleId: string | undefined;
+      if (has(body, 'cycleId')) {
+        const cycle = await prisma.cycle.findFirst({
+          where: { id: str(body, 'cycleId', 'Le cycle'), institutionId },
+          select: { id: true },
+        });
+        if (!cycle) {
+          throw new ValidationError(
+            'Cycle inconnu pour cet établissement',
+            'cycleId'
+          );
+        }
+        cycleId = cycle.id;
+      }
+
+      let departmentId: string | null | undefined;
+      if (has(body, 'departmentId')) {
+        const raw = optionalStr(body, 'departmentId');
+        if (!raw) {
+          departmentId = null;
+        } else {
+          const department = await prisma.department.findFirst({
+            where: { id: raw, faculty: { institutionId } },
+            select: { id: true },
+          });
+          if (!department) {
+            throw new ValidationError(
+              'Département inconnu pour cet établissement',
+              'departmentId'
+            );
+          }
+          departmentId = department.id;
+        }
+      }
+
+      return pick({
+        name: has(body, 'name') ? str(body, 'name', 'Le nom') : undefined,
+        code: has(body, 'code') ? code(body) : undefined,
+        durationYears: has(body, 'durationYears')
+          ? int(body, 'durationYears', 'La durée', 1, 10)
+          : undefined,
+        cycleId,
+        departmentId,
+      });
+    }
+
+    case 'academic-year':
+      return pick({
+        name: has(body, 'name') ? str(body, 'name', 'Le nom') : undefined,
+        startDate: has(body, 'startDate')
+          ? date(body, 'startDate', 'La date de début')
+          : undefined,
+        endDate: has(body, 'endDate')
+          ? date(body, 'endDate', 'La date de fin')
+          : undefined,
+      });
+
+    case 'semester': {
+      let academicYearId: string | undefined;
+      if (has(body, 'academicYearId')) {
+        const year = await prisma.academicYear.findFirst({
+          where: {
+            id: str(body, 'academicYearId', "L'année universitaire"),
+            institutionId,
+          },
+          select: { id: true },
+        });
+        if (!year) {
+          throw new ValidationError(
+            'Année universitaire inconnue pour cet établissement',
+            'academicYearId'
+          );
+        }
+        academicYearId = year.id;
+      }
+
+      return pick({
+        name: has(body, 'name') ? str(body, 'name', 'Le nom') : undefined,
+        number: has(body, 'number')
+          ? int(body, 'number', 'Le numéro', 1, 12)
+          : undefined,
+        startDate: has(body, 'startDate')
+          ? date(body, 'startDate', 'La date de début')
+          : undefined,
+        endDate: has(body, 'endDate')
+          ? date(body, 'endDate', 'La date de fin')
+          : undefined,
+        academicYearId,
+      });
+    }
+
+    case 'course':
+      return pick({
+        title: has(body, 'title') ? str(body, 'title', 'Le titre') : undefined,
+        code: has(body, 'code') ? code(body) : undefined,
+        description: has(body, 'description')
+          ? optionalStr(body, 'description')
+          : undefined,
+        credits: has(body, 'credits')
+          ? int(body, 'credits', 'Les crédits', 0, 60)
+          : undefined,
+        coefficient: has(body, 'coefficient')
+          ? Number(body.coefficient)
+          : undefined,
+      });
+  }
+}
+
+async function persist(
+  entity: StructureEntity,
+  id: string,
+  data: Record<string, unknown>
+) {
+  switch (entity) {
+    case 'faculty':
+      return prisma.faculty.update({ where: { id }, data });
+    case 'department':
+      return prisma.department.update({ where: { id }, data });
+    case 'cycle':
+      return prisma.cycle.update({ where: { id }, data });
+    case 'program':
+      return prisma.program.update({ where: { id }, data });
+    case 'academic-year':
+      return prisma.academicYear.update({ where: { id }, data });
+    case 'semester':
+      return prisma.semester.update({ where: { id }, data });
+    case 'course':
+      return prisma.course.update({ where: { id }, data });
+  }
+}
+
+/**
+ * Applique une correction. Renvoie l'élément à jour et la liste des champs
+ * réellement modifiés, pour que le journal d'audit trace l'intention sans
+ * recopier les contenus.
+ */
+export async function updateStructureEntity(
+  entity: StructureEntity,
+  institutionId: string,
+  id: string,
+  body: Body
+): Promise<{ record: any; fields: string[] }> {
+  const existing = await ownedRecord(entity, institutionId, id);
+  if (!existing) throw new NotFoundError();
+
+  const data = await updateData(entity, institutionId, body);
+  const fields = Object.keys(data);
+
+  if (fields.length === 0) {
+    throw new ValidationError('Aucune modification fournie', 'body');
+  }
+
+  // Cohérence des dates : la fin suit le début, même en modification partielle.
+  const start = (data.startDate as Date | undefined) ?? existing.startDate;
+  const end = (data.endDate as Date | undefined) ?? existing.endDate;
+  if (start instanceof Date && end instanceof Date && start >= end) {
+    throw new ValidationError(
+      'La date de fin doit suivre la date de début',
+      'endDate'
+    );
+  }
+
+  try {
+    const record = await persist(entity, id, data);
+    return { record, fields };
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      const duplicate = DUPLICATES[entity];
+      throw new ValidationError(duplicate.message, duplicate.field);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Archivage réversible, pour les entités qui portent un statut.
+ *
+ * Réserve à connaître : sauf pour un cours, le statut n'est lu par aucune
+ * règle d'accès. Archiver un programme, une année ou un semestre est une
+ * **étiquette de gestion**, pas un retrait de visibilité. Archiver un cours,
+ * en revanche, le retire réellement de la vue des étudiants.
+ */
+export async function archiveStructureEntity(
+  entity: StructureEntity,
+  institutionId: string,
+  id: string,
+  archived: boolean
+) {
+  if (!isArchivable(entity)) {
+    throw new ValidationError(
+      'Cet élément ne peut pas être archivé',
+      'entity'
+    );
+  }
+
+  const existing = await ownedRecord(entity, institutionId, id);
+  if (!existing) throw new NotFoundError();
+
+  if (entity === 'course') {
+    return prisma.course.update({
+      where: { id },
+      data: {
+        status: archived ? CourseStatus.ARCHIVED : CourseStatus.DRAFT,
+      },
+    });
+  }
+
+  const status = archived ? AcademicStatus.ARCHIVED : AcademicStatus.ACTIVE;
+
+  if (entity === 'program') {
+    return prisma.program.update({ where: { id }, data: { status } });
+  }
+  if (entity === 'semester') {
+    return prisma.semester.update({ where: { id }, data: { status } });
+  }
+  return prisma.academicYear.update({ where: { id }, data: { status } });
+}

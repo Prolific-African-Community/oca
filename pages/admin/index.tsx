@@ -1,6 +1,8 @@
 import { Role } from '@prisma/client';
 import { requireRoleSSR } from '../../lib/pageGuard';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { AppShell } from '../../components/app/AppShell';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
@@ -11,7 +13,6 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Reveal } from '../../components/anim/Reveal';
 import { Drawer } from '../../components/overlay/Drawer';
-import { StructureDrawer } from '../../components/admin/StructureDrawer';
 import { AssignmentDrawer } from '../../components/admin/AssignmentDrawer';
 import { AuditFeed } from '../../components/admin/AuditFeed';
 import type { Assignment, Teacher } from '../../components/admin/AssignmentDrawer';
@@ -62,12 +63,12 @@ function generatePassword() {
 }
 
 export default function AdminWorkspace() {
+  const router = useRouter();
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const [students, setStudents] = useState<any[]>([]);
   const [structure, setStructure] = useState<Structure>(EMPTY_STRUCTURE);
   const [drawer, setDrawer] = useState(false);
-  const [structureDrawer, setStructureDrawer] = useState(false);
   const [assignmentDrawer, setAssignmentDrawer] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -121,30 +122,35 @@ export default function AdminWorkspace() {
     const steps = [
       {
         key: 'faculty',
+        tab: 'faculty',
         label: 'Créer une faculté',
         done: structure.faculties.length > 0,
         action: 'structure' as const,
       },
       {
         key: 'program',
+        tab: 'program',
         label: 'Créer un programme',
         done: structure.programs.length > 0,
         action: 'structure' as const,
       },
       {
         key: 'year',
+        tab: 'academic-year',
         label: 'Déclarer l’année universitaire en cours',
         done: Boolean(currentYear),
         action: 'structure' as const,
       },
       {
         key: 'semester',
+        tab: 'semester',
         label: 'Ajouter les semestres de l’année',
         done: semestersThisYear.length > 0,
         action: 'structure' as const,
       },
       {
         key: 'course',
+        tab: 'course',
         label: 'Créer au moins un cours',
         done: structure.courses.length > 0,
         action: 'structure' as const,
@@ -213,7 +219,7 @@ export default function AdminWorkspace() {
         hint: 'Facultés, programmes, semestres, cours',
         group: 'Actions',
         icon: <LayersIcon size={17} />,
-        perform: () => setStructureDrawer(true),
+        perform: () => router.push('/admin/structure'),
       },
     ],
     []
@@ -278,18 +284,25 @@ export default function AdminWorkspace() {
                 <span className="text-ink/50">Prochaine étape · </span>
                 {setup.next.label}
               </p>
-              <button
-                onClick={() =>
-                  setup.next?.action === 'student'
-                    ? setDrawer(true)
-                    : setup.next?.action === 'assignment'
-                    ? setAssignmentDrawer(true)
-                    : setStructureDrawer(true)
-                }
-                className={buttonClasses('primary', 'md')}
-              >
-                Faire maintenant
-              </button>
+              {setup.next.action === 'structure' ? (
+                <Link
+                  href={`/admin/structure?tab=${setup.next.tab ?? 'faculty'}`}
+                  className={buttonClasses('primary', 'md', 'no-underline')}
+                >
+                  Faire maintenant
+                </Link>
+              ) : (
+                <button
+                  onClick={() =>
+                    setup.next?.action === 'student'
+                      ? setDrawer(true)
+                      : setAssignmentDrawer(true)
+                  }
+                  className={buttonClasses('primary', 'md')}
+                >
+                  Faire maintenant
+                </button>
+              )}
             </div>
           ) : (
             <p className="mt-4 rounded-card border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -339,24 +352,24 @@ export default function AdminWorkspace() {
             >
               <PlusIcon size={18} /> Inscrire un étudiant
             </button>
-            <button
-              onClick={() => setStructureDrawer(true)}
-              className={buttonClasses('secondary', 'md')}
+            <Link
+              href="/admin/structure"
+              className={buttonClasses('secondary', 'md', 'no-underline')}
             >
               Configurer la structure
-            </button>
+            </Link>
             <button
               onClick={() => setAssignmentDrawer(true)}
               className={buttonClasses('secondary', 'md')}
             >
               Affecter un professeur
             </button>
-            <button
-              onClick={() => setStructureDrawer(true)}
-              className={buttonClasses('secondary', 'md')}
+            <Link
+              href="/admin/structure?tab=course"
+              className={buttonClasses('secondary', 'md', 'no-underline')}
             >
               Créer un cours
-            </button>
+            </Link>
           </div>
         </Card>
       </Reveal>
@@ -367,7 +380,7 @@ export default function AdminWorkspace() {
         title="Structure académique"
         description="Facultés, programmes, années et semestres de votre établissement."
         actionLabel="Configurer la structure"
-        onAction={() => setStructureDrawer(true)}
+        actionHref="/admin/structure"
       >
         {structure.faculties.length === 0 ? (
           <EmptyState
@@ -375,12 +388,12 @@ export default function AdminWorkspace() {
             title="Rien n’est encore configuré"
             description="Créez une faculté, puis un programme : le reste en découle."
             action={
-              <button
-                onClick={() => setStructureDrawer(true)}
-                className={buttonClasses('primary', 'md')}
+              <Link
+                href="/admin/structure"
+                className={buttonClasses('primary', 'md', 'no-underline')}
               >
                 Commencer
-              </button>
+              </Link>
             }
           />
         ) : (
@@ -531,7 +544,7 @@ export default function AdminWorkspace() {
         title="Cours"
         description="Les enseignements rattachés aux semestres de vos programmes."
         actionLabel="Créer un cours"
-        onAction={() => setStructureDrawer(true)}
+        actionHref="/admin/structure?tab=course"
       >
         {structure.courses.length === 0 ? (
           <EmptyState
@@ -539,12 +552,12 @@ export default function AdminWorkspace() {
             title="Aucun cours"
             description="Créez d’abord un semestre, puis ajoutez-y des cours."
             action={
-              <button
-                onClick={() => setStructureDrawer(true)}
-                className={buttonClasses('primary', 'md')}
+              <Link
+                href="/admin/structure"
+                className={buttonClasses('primary', 'md', 'no-underline')}
               >
                 Configurer la structure
-              </button>
+              </Link>
             }
           />
         ) : (
@@ -611,21 +624,6 @@ export default function AdminWorkspace() {
         onError={(message) => toast({ title: 'Action impossible', description: message, tone: 'error' })}
       />
 
-      <StructureDrawer
-        open={structureDrawer}
-        onClose={() => setStructureDrawer(false)}
-        structure={structure}
-        onCreated={(entity, created) => {
-          fetchStructure();
-          toast({
-            title: 'Élément créé',
-            description: created?.name ?? created?.title ?? entity,
-            tone: 'success',
-          });
-        }}
-        onError={(message) => toast({ title: 'Création impossible', description: message, tone: 'error' })}
-      />
-
       <CreateStudentDrawer
         open={drawer}
         onClose={() => setDrawer(false)}
@@ -686,6 +684,7 @@ function Section({
   description,
   actionLabel,
   onAction,
+  actionHref,
   children,
 }: {
   id: string;
@@ -693,6 +692,8 @@ function Section({
   description: string;
   actionLabel?: string;
   onAction?: () => void;
+  /** Certaines actions mènent à une page dédiée plutôt qu'à un tiroir. */
+  actionHref?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -705,7 +706,15 @@ function Section({
             </h2>
             <p className="text-ink/45 mt-0.5 text-sm">{description}</p>
           </div>
-          {actionLabel && onAction && (
+          {actionLabel && actionHref && (
+            <Link
+              href={actionHref}
+              className={buttonClasses('secondary', 'md', 'no-underline')}
+            >
+              {actionLabel}
+            </Link>
+          )}
+          {actionLabel && !actionHref && onAction && (
             <button
               onClick={onAction}
               className={buttonClasses('secondary', 'md')}

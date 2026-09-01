@@ -6,7 +6,7 @@ import { Badge } from '../ui/Badge';
 import { Avatar } from '../ui/Avatar';
 import { EmptyState } from '../ui/EmptyState';
 import { UsersIcon, BookIcon } from '../ui/icons';
-import type { StructureData } from './StructureDrawer';
+import type { StructureData } from './StructureForm';
 
 /**
  * Affectation des enseignants aux cours.
