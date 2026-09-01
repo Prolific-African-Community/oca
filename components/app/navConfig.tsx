@@ -1,5 +1,6 @@
 import {
   HomeIcon,
+  CapIcon,
   BookIcon,
   ProgressIcon,
   LiveIcon,
@@ -44,10 +45,33 @@ export const roleConfig: Record<string, RoleMeta> = {
   admin: {
     label: 'Administration',
     home: '/admin',
+    /**
+     * Les sections vivent toutes sur le tableau de bord : la navigation
+     * pointe donc des ancres, pas des pages qui n'existent pas encore.
+     * Les anciens liens `/admin/students` et `/admin/programs` renvoyaient
+     * une 404 — mieux vaut aucune entrée qu'une entrée morte.
+     */
     nav: [
-      { label: 'Accueil', href: '/admin', icon: HomeIcon },
-      { label: 'Étudiants', href: '/admin/students', icon: UsersIcon },
-      { label: 'Programmes', href: '/admin/programs', icon: LayersIcon },
+      { label: 'Pilotage', short: 'Pilotage', href: '/admin', icon: HomeIcon },
+      {
+        label: 'Structure',
+        short: 'Structure',
+        href: '/admin#structure',
+        icon: LayersIcon,
+      },
+      {
+        label: 'Étudiants',
+        short: 'Étudiants',
+        href: '/admin#etudiants',
+        icon: UsersIcon,
+      },
+      {
+        label: 'Professeurs',
+        short: 'Profs',
+        href: '/admin#professeurs',
+        icon: CapIcon,
+      },
+      { label: 'Cours', short: 'Cours', href: '/admin#cours', icon: BookIcon },
     ],
   },
   superadmin: {

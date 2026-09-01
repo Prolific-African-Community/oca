@@ -22,9 +22,9 @@ import {
   PlusIcon,
   UsersIcon,
   ClipboardIcon,
+  BookIcon,
   LayersIcon,
   CheckIcon,
-  ChevronRightIcon,
   CapIcon,
 } from '../../components/ui/icons';
 
@@ -104,50 +104,75 @@ export default function AdminWorkspace() {
     fetchTeaching();
   }, [fetchStructure, fetchTeaching]);
 
-  // Bandeau d'état réel : ce qui manque encore pour que l'établissement soit utilisable.
-  const readiness = useMemo(() => {
-    const currentYear = structure.academicYears.find((y) => y.isCurrent);
+  /**
+   * Mise en route de l'établissement, étape par étape.
+   *
+   * Chaque étape est vraie ou fausse d'après les données réelles : rien n'est
+   * coché par défaut, et le pourcentage n'est pas décoratif. L'ordre suit la
+   * dépendance réelle — sans faculté, pas de programme ; sans semestre, pas
+   * de cours ; sans cours, pas d'affectation.
+   */
+  const setup = useMemo(() => {
+    const currentYear = structure.academicYears.find((y) => y.isCurrent)
     const semestersThisYear = currentYear
       ? structure.semesters.filter((sem) => sem.academicYearId === currentYear.id)
-      : [];
+      : []
 
-    const items: { icon: any; label: string; hint: string; tone: 'warning' | 'brand' | 'success' }[] = [];
+    const steps = [
+      {
+        key: 'faculty',
+        label: 'Créer une faculté',
+        done: structure.faculties.length > 0,
+        action: 'structure' as const,
+      },
+      {
+        key: 'program',
+        label: 'Créer un programme',
+        done: structure.programs.length > 0,
+        action: 'structure' as const,
+      },
+      {
+        key: 'year',
+        label: 'Déclarer l’année universitaire en cours',
+        done: Boolean(currentYear),
+        action: 'structure' as const,
+      },
+      {
+        key: 'semester',
+        label: 'Ajouter les semestres de l’année',
+        done: semestersThisYear.length > 0,
+        action: 'structure' as const,
+      },
+      {
+        key: 'course',
+        label: 'Créer au moins un cours',
+        done: structure.courses.length > 0,
+        action: 'structure' as const,
+      },
+      {
+        key: 'assignment',
+        label: 'Affecter un professeur à un cours',
+        done: assignments.length > 0,
+        action: 'assignment' as const,
+      },
+      {
+        key: 'student',
+        label: 'Inscrire un premier étudiant',
+        done: students.length > 0,
+        action: 'student' as const,
+      },
+    ]
 
-    if (structure.faculties.length === 0) {
-      items.push({ icon: LayersIcon, label: 'Aucune faculté', hint: 'Commencez par créer une faculté', tone: 'warning' });
+    const done = steps.filter((step) => step.done).length
+    return {
+      steps,
+      done,
+      total: steps.length,
+      percent: Math.round((done / steps.length) * 100),
+      next: steps.find((step) => !step.done) ?? null,
+      currentYear,
     }
-    if (structure.programs.length === 0) {
-      items.push({ icon: LayersIcon, label: 'Aucun programme', hint: 'Un cycle puis un programme sont nécessaires', tone: 'warning' });
-    }
-    if (!currentYear) {
-      items.push({ icon: ClipboardIcon, label: 'Aucune année en cours', hint: 'Déclarez l’année universitaire', tone: 'warning' });
-    } else if (semestersThisYear.length === 0) {
-      items.push({ icon: ClipboardIcon, label: 'Aucun semestre', hint: `Année ${currentYear.name} sans semestre`, tone: 'warning' });
-    }
-    if (structure.courses.length === 0 && structure.semesters.length > 0) {
-      items.push({ icon: ClipboardIcon, label: 'Aucun cours', hint: 'Les maquettes sont vides', tone: 'brand' });
-    }
-
-    if (structure.courses.length > 0 && assignments.length === 0) {
-      items.push({
-        icon: UsersIcon,
-        label: 'Aucun enseignant affecté',
-        hint: `${structure.courses.length} cours sans enseignant`,
-        tone: 'brand',
-      });
-    }
-
-    if (items.length === 0) {
-      items.push({
-        icon: CheckIcon,
-        label: 'Structure opérationnelle',
-        hint: `${structure.programs.length} programme(s) · ${structure.courses.length} cours · ${assignments.length} affectation(s)`,
-        tone: 'success',
-      });
-    }
-
-    return items;
-  }, [structure, assignments]);
+  }, [structure, assignments, students])
 
   // Avancement d'un programme = part de ses semestres qui contiennent au moins un cours.
   const programProgress = useMemo(
@@ -196,6 +221,16 @@ export default function AdminWorkspace() {
 
   const recent = useMemo(() => students.slice(-5).reverse(), [students]);
 
+  const studentsWithoutEnrollment = useMemo(
+    () => students.filter((s) => !s.enrollmentStatus).length,
+    [students]
+  );
+
+  const coursesWithoutTeacher = useMemo(() => {
+    const taught = new Set(assignments.map((a) => a.course.id));
+    return structure.courses.filter((c) => !taught.has(c.id)).length;
+  }, [structure.courses, assignments]);
+
   return (
     <AppShell
       role="admin"
@@ -208,139 +243,360 @@ export default function AdminWorkspace() {
         </button>
       }
     >
-      {/* ATTENTION BAND */}
+      {/* ---------------------------------------------- Vue d'ensemble */}
       <Reveal>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {readiness.map((a) => (
-            <button
-              key={a.label}
-              onClick={() =>
-                a.label === 'Aucun enseignant affecté' ? setAssignmentDrawer(true) : setStructureDrawer(true)
-              }
-              className="group flex items-center gap-3 rounded-hero border border-hairline bg-white p-4 text-left shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lift"
-            >
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-cloud text-ink/60 transition-colors group-hover:bg-oca-tint group-hover:text-oca">
-                <a.icon size={20} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-medium text-ink">{a.label}</span>
-                <span className="block truncate text-sm text-ink/45">{a.hint}</span>
-              </span>
-              <ChevronRightIcon size={16} className="text-ink/30 transition-transform group-hover:translate-x-0.5" />
-            </button>
-          ))}
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-ink/45 text-sm">Établissement</p>
+              <p className="text-xl font-medium tracking-tight text-ink">
+                {structure.institution?.name ?? 'Établissement non configuré'}
+              </p>
+              <p className="text-ink/45 mt-1 text-sm">
+                {setup.currentYear
+                  ? `Année universitaire ${setup.currentYear.name}`
+                  : 'Aucune année universitaire en cours'}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-medium tracking-tight text-ink">
+                {setup.percent}%
+              </p>
+              <p className="text-ink/45 text-sm">
+                {setup.done} étape(s) sur {setup.total}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <ProgressBar value={setup.percent} />
+          </div>
+
+          {setup.next ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-hairline bg-cloud/60 px-4 py-3">
+              <p className="text-[15px] text-ink">
+                <span className="text-ink/50">Prochaine étape · </span>
+                {setup.next.label}
+              </p>
+              <button
+                onClick={() =>
+                  setup.next?.action === 'student'
+                    ? setDrawer(true)
+                    : setup.next?.action === 'assignment'
+                    ? setAssignmentDrawer(true)
+                    : setStructureDrawer(true)
+                }
+                className={buttonClasses('primary', 'md')}
+              >
+                Faire maintenant
+              </button>
+            </div>
+          ) : (
+            <p className="mt-4 rounded-card border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              Votre établissement est configuré. Vous pouvez inscrire des
+              étudiants et suivre l’activité ci-dessous.
+            </p>
+          )}
+        </Card>
+      </Reveal>
+
+      {/* -------------------------------------------------- Chiffres clés */}
+      <Reveal delay={60}>
+        <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Metric
+            label="Étudiants inscrits"
+            value={students.length}
+            hint={`${studentsWithoutEnrollment} sans inscription`}
+            alert={studentsWithoutEnrollment > 0}
+          />
+          <Metric
+            label="Professeurs"
+            value={teachers.length}
+            hint={`${assignments.length} affectation(s)`}
+          />
+          <Metric
+            label="Cours"
+            value={structure.courses.length}
+            hint={`${coursesWithoutTeacher} sans professeur`}
+            alert={coursesWithoutTeacher > 0}
+          />
+          <Metric
+            label="Programmes"
+            value={structure.programs.length}
+            hint={`${structure.faculties.length} faculté(s)`}
+          />
         </div>
       </Reveal>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-3">
-        {/* main */}
-        <div className="space-y-5 lg:col-span-2">
-          <Reveal delay={60}>
-            <Card>
-              <CardHeader title="À valider aujourd’hui" />
-              <EmptyState
-                icon={<ClipboardIcon size={22} />}
-                title="Aucun dossier en attente"
-                description="La validation des inscriptions arrivera dans une prochaine version."
+      {/* --------------------------------------------------- Que faire ? */}
+      <Reveal delay={90}>
+        <Card className="mt-5">
+          <CardHeader title="Que souhaitez-vous faire ?" />
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setDrawer(true)}
+              className={buttonClasses('primary', 'md')}
+            >
+              <PlusIcon size={18} /> Inscrire un étudiant
+            </button>
+            <button
+              onClick={() => setStructureDrawer(true)}
+              className={buttonClasses('secondary', 'md')}
+            >
+              Configurer la structure
+            </button>
+            <button
+              onClick={() => setAssignmentDrawer(true)}
+              className={buttonClasses('secondary', 'md')}
+            >
+              Affecter un professeur
+            </button>
+            <button
+              onClick={() => setStructureDrawer(true)}
+              className={buttonClasses('secondary', 'md')}
+            >
+              Créer un cours
+            </button>
+          </div>
+        </Card>
+      </Reveal>
+
+      {/* ------------------------------------------- Structure académique */}
+      <Section
+        id="structure"
+        title="Structure académique"
+        description="Facultés, programmes, années et semestres de votre établissement."
+        actionLabel="Configurer la structure"
+        onAction={() => setStructureDrawer(true)}
+      >
+        {structure.faculties.length === 0 ? (
+          <EmptyState
+            icon={<LayersIcon size={22} />}
+            title="Rien n’est encore configuré"
+            description="Créez une faculté, puis un programme : le reste en découle."
+            action={
+              <button
+                onClick={() => setStructureDrawer(true)}
+                className={buttonClasses('primary', 'md')}
+              >
+                Commencer
+              </button>
+            }
+          />
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              <Metric compact label="Facultés" value={structure.faculties.length} />
+              <Metric
+                compact
+                label="Départements"
+                value={structure.faculties.reduce(
+                  (n, f) => n + f.departments.length,
+                  0
+                )}
               />
-            </Card>
-          </Reveal>
+              <Metric compact label="Cycles" value={structure.cycles.length} />
+              <Metric compact label="Programmes" value={structure.programs.length} />
+              <Metric compact label="Semestres" value={structure.semesters.length} />
+            </div>
 
-          <Reveal delay={110}>
-            <Card>
-              <CardHeader
-                title="Derniers inscrits"
-                action={
-                  <button onClick={() => setDrawer(true)} className="inline-flex items-center gap-1 text-sm font-medium text-apple hover:underline">
-                    Inscrire <PlusIcon size={15} />
-                  </button>
-                }
-              />
-              {recent.length === 0 ? (
-                <EmptyState
-                  icon={<UsersIcon size={22} />}
-                  title="Aucun étudiant pour le moment"
-                  description="Inscrivez votre premier étudiant — cela prend quelques secondes."
-                  action={
-                    <button onClick={() => setDrawer(true)} className={buttonClasses('primary', 'md')}>
-                      <PlusIcon size={17} /> Inscrire un étudiant
-                    </button>
-                  }
-                />
-              ) : (
-                <ul className="space-y-1">
-                  {recent.map((s) => (
-                    <li key={s.id} className="flex items-center gap-3 rounded-2xl p-2.5 transition-colors hover:bg-cloud">
-                      <Avatar name={`${s.firstName} ${s.lastName}`} size="md" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[15px] font-medium text-ink">
-                          {s.firstName} {s.lastName}
-                        </p>
-                        <p className="truncate text-sm text-ink/45">{s.email}</p>
-                      </div>
-                      <div className="hidden items-center gap-2 sm:flex">
-                        {s.enrollmentStatus ? (
-                          <>
-                            <Badge tone="brand">{s.faculty}</Badge>
-                            <Badge tone="neutral">{s.program}</Badge>
-                            {s.semester && <Badge tone="neutral">{s.semester}</Badge>}
-                          </>
-                        ) : (
-                          <Badge tone="warning">Sans inscription</Badge>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          </Reveal>
-        </div>
-
-        {/* aside */}
-        <div className="space-y-5">
-          <Reveal delay={80}>
-            <Card>
-              <CardHeader title="Actions rapides" />
-              <div className="space-y-2">
-                <QuickAction icon={<PlusIcon size={18} />} label="Inscrire un étudiant" hint="⌘K" onClick={() => setDrawer(true)} primary />
-                <QuickAction icon={<LayersIcon size={18} />} label="Structure académique" onClick={() => setStructureDrawer(true)} />
-                <QuickAction icon={<UsersIcon size={18} />} label="Affecter les enseignants" onClick={() => setAssignmentDrawer(true)} />
-              </div>
-            </Card>
-          </Reveal>
-
-          <Reveal delay={110}>
-            <Card>
-              <CardHeader title="Activité récente" />
-              <AuditFeed limit={6} />
-            </Card>
-          </Reveal>
-
-          <Reveal delay={130}>
-            <Card>
-              <CardHeader title="Programmes" />
-              {programProgress.length === 0 ? (
-                <p className="text-sm text-ink/45">Aucun programme configuré pour le moment.</p>
-              ) : (
-              <ul className="space-y-4">
+            {programProgress.length > 0 && (
+              <ul className="mt-5 space-y-4">
                 {programProgress.map((p) => (
                   <li key={p.name}>
-                    <div className="mb-1.5 flex items-center justify-between text-sm">
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-sm">
                       <span className="font-medium text-ink">{p.name}</span>
-                      <span className={p.complete < 100 ? 'text-amber-600' : 'text-emerald-600'}>
-                        {p.complete < 100 ? 'À compléter' : 'Complet'}
+                      <span
+                        className={
+                          p.complete < 100 ? 'text-amber-600' : 'text-emerald-600'
+                        }
+                      >
+                        {p.complete < 100
+                          ? 'Semestres à compléter'
+                          : 'Tous les semestres ont des cours'}
                       </span>
                     </div>
                     <ProgressBar value={p.complete} />
                   </li>
                 ))}
               </ul>
-              )}
-            </Card>
-          </Reveal>
-        </div>
-      </div>
+            )}
+          </>
+        )}
+      </Section>
+
+      {/* ------------------------------------------------------ Étudiants */}
+      <Section
+        id="etudiants"
+        title="Étudiants"
+        description="Les personnes inscrites dans votre établissement."
+        actionLabel="Inscrire un étudiant"
+        onAction={() => setDrawer(true)}
+      >
+        {students.length === 0 ? (
+          <EmptyState
+            icon={<UsersIcon size={22} />}
+            title="Aucun étudiant pour le moment"
+            description="Inscrivez votre premier étudiant — cela prend quelques secondes."
+            action={
+              <button
+                onClick={() => setDrawer(true)}
+                className={buttonClasses('primary', 'md')}
+              >
+                <PlusIcon size={17} /> Inscrire un étudiant
+              </button>
+            }
+          />
+        ) : (
+          <>
+            <p className="text-ink/50 mb-3 text-sm">
+              {students.length} étudiant(s) · les {recent.length} derniers
+              inscrits
+            </p>
+            <ul className="space-y-1">
+              {recent.map((s) => (
+                <li
+                  key={s.id}
+                  className="flex items-center gap-3 rounded-2xl p-2.5 transition-colors hover:bg-cloud"
+                >
+                  <Avatar name={`${s.firstName} ${s.lastName}`} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-medium text-ink">
+                      {s.firstName} {s.lastName}
+                    </p>
+                    <p className="truncate text-sm text-ink/45">{s.email}</p>
+                  </div>
+                  <div className="hidden shrink-0 items-center gap-2 sm:flex">
+                    {s.enrollmentStatus ? (
+                      <>
+                        <Badge tone="brand">{s.faculty}</Badge>
+                        <Badge tone="neutral">{s.program}</Badge>
+                        {s.semester && <Badge tone="neutral">{s.semester}</Badge>}
+                      </>
+                    ) : (
+                      <Badge tone="warning">Sans inscription</Badge>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Section>
+
+      {/* ---------------------------------------------------- Professeurs */}
+      <Section
+        id="professeurs"
+        title="Professeurs"
+        description="Les enseignants et les cours dont ils ont la charge."
+        actionLabel="Affecter un professeur"
+        onAction={() => setAssignmentDrawer(true)}
+      >
+        {teachers.length === 0 ? (
+          <EmptyState
+            icon={<CapIcon size={22} />}
+            title="Aucun professeur enregistré"
+            description="Les professeurs apparaîtront ici une fois ajoutés à l’établissement."
+          />
+        ) : (
+          <ul className="space-y-1">
+            {teachers.slice(0, 6).map((t) => {
+              // Le compte est déjà calculé côté API pour chaque enseignant.
+              const count = t.assignmentCount
+              return (
+                <li
+                  key={t.id}
+                  className="flex items-center gap-3 rounded-2xl p-2.5 transition-colors hover:bg-cloud"
+                >
+                  <Avatar name={`${t.firstName} ${t.lastName}`} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-medium text-ink">
+                      {t.firstName} {t.lastName}
+                    </p>
+                    <p className="truncate text-sm text-ink/45">{t.email}</p>
+                  </div>
+                  <Badge tone={count === 0 ? 'warning' : 'neutral'}>
+                    {count === 0 ? 'Aucun cours' : `${count} cours`}
+                  </Badge>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </Section>
+
+      {/* ---------------------------------------------------------- Cours */}
+      <Section
+        id="cours"
+        title="Cours"
+        description="Les enseignements rattachés aux semestres de vos programmes."
+        actionLabel="Créer un cours"
+        onAction={() => setStructureDrawer(true)}
+      >
+        {structure.courses.length === 0 ? (
+          <EmptyState
+            icon={<BookIcon size={22} />}
+            title="Aucun cours"
+            description="Créez d’abord un semestre, puis ajoutez-y des cours."
+            action={
+              <button
+                onClick={() => setStructureDrawer(true)}
+                className={buttonClasses('primary', 'md')}
+              >
+                Configurer la structure
+              </button>
+            }
+          />
+        ) : (
+          <>
+            {coursesWithoutTeacher > 0 && (
+              <p className="mb-3 text-sm text-amber-600">
+                {coursesWithoutTeacher} cours n’ont pas encore de professeur.
+              </p>
+            )}
+            <ul className="space-y-1">
+              {structure.courses.slice(0, 8).map((course) => {
+                const taught = assignments.some((a) => a.course.id === course.id)
+                return (
+                  <li
+                    key={course.id}
+                    className="flex flex-wrap items-center gap-3 rounded-2xl p-2.5 transition-colors hover:bg-cloud"
+                  >
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cloud text-ink/50">
+                      <BookIcon size={17} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-medium text-ink">
+                        {course.title}
+                      </p>
+                      <p className="truncate text-sm text-ink/45">
+                        {course.code} · {course.credits} crédits
+                      </p>
+                    </div>
+                    <Badge tone={taught ? 'success' : 'warning'}>
+                      {taught ? 'Professeur affecté' : 'Sans professeur'}
+                    </Badge>
+                  </li>
+                )
+              })}
+            </ul>
+            {structure.courses.length > 8 && (
+              <p className="text-ink/45 mt-3 text-sm">
+                et {structure.courses.length - 8} autre(s) cours.
+              </p>
+            )}
+          </>
+        )}
+      </Section>
+
+      {/* ------------------------------------------------ Activité récente */}
+      <Section
+        id="activite"
+        title="Activité récente"
+        description="Ce qui a été créé ou modifié dans votre établissement."
+      >
+        <AuditFeed limit={8} />
+      </Section>
 
       <AssignmentDrawer
         open={assignmentDrawer}
@@ -384,33 +640,83 @@ export default function AdminWorkspace() {
   );
 }
 
-function QuickAction({
-  icon,
+/** Une mesure du cockpit : chiffre lisible, intitulé simple, alerte si utile. */
+function Metric({
   label,
+  value,
   hint,
-  onClick,
-  primary,
+  alert,
+  compact,
 }: {
-  icon: React.ReactNode;
   label: string;
+  value: number;
   hint?: string;
-  onClick: () => void;
-  primary?: boolean;
+  alert?: boolean;
+  compact?: boolean;
+}) {
+  const body = (
+    <>
+      <p
+        className={
+          (compact ? 'text-lg' : 'text-2xl') +
+          ' font-medium tracking-tight ' +
+          (alert ? 'text-amber-600' : 'text-ink')
+        }
+      >
+        {value}
+      </p>
+      <p className="text-ink/50 text-sm leading-tight">{label}</p>
+      {hint && <p className="text-ink/40 mt-0.5 text-xs">{hint}</p>}
+    </>
+  );
+
+  if (compact) return <div className="min-w-0">{body}</div>;
+
+  return (
+    <div className="rounded-hero border border-hairline bg-white p-4 shadow-soft">
+      {body}
+    </div>
+  );
+}
+
+/** Section ancrée du cockpit : un titre, une phrase, une action. */
+function Section({
+  id,
+  title,
+  description,
+  actionLabel,
+  onAction,
+  children,
+}: {
+  id: string;
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  children: React.ReactNode;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={
-        'group flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all duration-300 ' +
-        (primary
-          ? 'border-oca-tint bg-oca-tint text-oca hover:bg-oca hover:text-white'
-          : 'border-hairline bg-white text-ink/70 hover:border-ink/10 hover:bg-cloud')
-      }
-    >
-      <span className="shrink-0">{icon}</span>
-      <span className="flex-1 text-[15px] font-medium">{label}</span>
-      {hint && <span className="text-xs opacity-50">{hint}</span>}
-    </button>
+    <section id={id} className="mt-5 scroll-mt-24">
+      <Card>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-[17px] font-medium tracking-tight text-ink">
+              {title}
+            </h2>
+            <p className="text-ink/45 mt-0.5 text-sm">{description}</p>
+          </div>
+          {actionLabel && onAction && (
+            <button
+              onClick={onAction}
+              className={buttonClasses('secondary', 'md')}
+            >
+              {actionLabel}
+            </button>
+          )}
+        </div>
+        {children}
+      </Card>
+    </section>
   );
 }
 
