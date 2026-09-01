@@ -40,6 +40,25 @@ const STAGES = [
 /** Cadence indicative, calée sur la durée habituelle d'une génération. */
 const STAGE_INTERVAL_MS = 6000
 
+/** Étape courante, nommée pour que l'enseignant sache où il en est. */
+const STATE_LABELS: Record<string, string> = {
+  CONFIGURING: 'Configuration',
+  GENERATING: 'Génération en cours',
+  PREVIEW: 'Brouillon à relire',
+  APPLYING: 'Création en cours',
+  APPLIED: 'Appliqué',
+  FAILED: 'Échec',
+}
+
+const STATE_TONES: Record<string, 'neutral' | 'brand' | 'warning' | 'success' | 'live'> = {
+  CONFIGURING: 'neutral',
+  GENERATING: 'brand',
+  PREVIEW: 'warning',
+  APPLYING: 'brand',
+  APPLIED: 'success',
+  FAILED: 'live',
+}
+
 function StageList({ active }: { active: number }) {
   return (
     <ul className="mt-4 space-y-2">
@@ -589,18 +608,23 @@ export function CourseBuildPanel({
 
   return (
     <Card className="mb-5 border-apple/30">
-      <CardHeader
-        title="Construire avec l’assistant"
-        action={
-          <button
-            onClick={closeWithGuard}
-            disabled={draft.busy}
-            className="text-ink/50 text-sm font-medium hover:underline disabled:opacity-40"
-          >
-            Fermer
-          </button>
-        }
-      />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[15px] font-medium text-ink">
+            Construire avec l’assistant
+          </p>
+          <Badge tone={STATE_TONES[draft.status]}>
+            {STATE_LABELS[draft.status]}
+          </Badge>
+        </div>
+        <button
+          onClick={closeWithGuard}
+          disabled={draft.busy}
+          className="text-ink/50 shrink-0 text-sm font-medium hover:underline disabled:opacity-40"
+        >
+          Fermer
+        </button>
+      </div>
 
       <div className="rounded-card border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
         <SparkIcon size={15} /> L’assistant produit un brouillon. Tout arrive en
@@ -789,20 +813,24 @@ export function CourseBuildPanel({
               </div>
             ))}
 
-          <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-3">
-            <span className="text-ink/50 text-sm">Contenu détaillé :</span>
-            <button
-              onClick={expandAll}
-              className="text-sm font-medium text-apple hover:underline"
-            >
-              Tout déplier
-            </button>
-            <button
-              onClick={() => setExpanded(new Set())}
-              className="text-ink/50 text-sm font-medium hover:underline"
-            >
-              Tout replier
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-3">
+            <span className="text-ink/50 text-sm">
+              Contenu détaillé — ouvrez une leçon pour la lire ou la retoucher
+            </span>
+            <div className="flex shrink-0 items-center gap-3">
+              <button
+                onClick={expandAll}
+                className="text-sm font-medium text-apple hover:underline"
+              >
+                Tout déplier
+              </button>
+              <button
+                onClick={() => setExpanded(new Set())}
+                className="text-ink/50 text-sm font-medium hover:underline"
+              >
+                Tout replier
+              </button>
+            </div>
           </div>
 
           <ul className="space-y-3">

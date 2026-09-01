@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { AppShell } from '../../../../components/app/AppShell'
-import { Card, CardHeader } from '../../../../components/ui/Card'
+import { Card } from '../../../../components/ui/Card'
 import { Badge } from '../../../../components/ui/Badge'
 import { Button, buttonClasses } from '../../../../components/ui/Button'
 import { EmptyState } from '../../../../components/ui/EmptyState'
@@ -258,10 +258,10 @@ export default function CourseEditorPage() {
     <AppShell
       role="teacher"
       requiredRole="teacher"
-      title={course ? `Éditeur — ${course.title}` : 'Éditeur de cours'}
+      title="Course Studio"
       subtitle={
         course
-          ? `${course.code} · ${course.program.name} · ${course.semester.name} ${course.semester.academicYear}`
+          ? `${course.title} · ${course.code} · ${course.semester.name} ${course.semester.academicYear}`
           : undefined
       }
     >
@@ -324,17 +324,11 @@ export default function CourseEditorPage() {
               }
             />
           ) : (
-            <div className="mb-5 flex justify-end">
-              <button
-                onClick={() => setBuilding(true)}
-                className={buttonClasses('secondary', 'md')}
-              >
-                Construire avec l’IA
-              </button>
-            </div>
+            <ReviewSummary
+              course={course}
+              onBuild={() => setBuilding(true)}
+            />
           )}
-
-          <ReviewSummary course={course} />
 
           <div className="grid gap-5 lg:grid-cols-[300px_1fr] lg:items-start">
             {/* Navigation : modules et leçons, visible pendant l'édition */}
@@ -480,38 +474,83 @@ function DemoBanner() {
   )
 }
 
+/** Une mesure : valeur lisible, intitulé discret, teinte seulement si utile. */
+function Stat({
+  value,
+  label,
+  alert,
+}: {
+  value: string
+  label: string
+  alert?: boolean
+}) {
+  return (
+    <div className="min-w-0">
+      <p
+        className={
+          'text-lg font-medium tracking-tight ' +
+          (alert ? 'text-amber-600' : 'text-ink')
+        }
+      >
+        {value}
+      </p>
+      <p className="text-ink/45 text-xs leading-tight">{label}</p>
+    </div>
+  )
+}
+
 /** Ce qui reste à relire, en un coup d'œil. Aucune action, aucun jugement. */
-function ReviewSummary({ course }: { course: EditorCourse }) {
+function ReviewSummary({
+  course,
+  onBuild,
+}: {
+  course: EditorCourse
+  onBuild: () => void
+}) {
   const r = course.review
   const coursePublished = course.status === 'PUBLISHED'
 
   return (
     <Card className="mb-5">
-      <CardHeader
-        title="État de la relecture"
-        action={
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <p className="text-[15px] font-medium text-ink">
+            État de la relecture
+          </p>
           <Badge tone={coursePublished ? 'success' : 'warning'}>
             {coursePublished ? 'Cours publié' : 'Cours non publié'}
           </Badge>
-        }
-      />
+        </div>
+        <button onClick={onBuild} className={buttonClasses('secondary', 'md')}>
+          Construire avec l’IA
+        </button>
+      </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={r.draftModules > 0 ? 'warning' : 'neutral'}>
-          {r.draftModules} module(s) en brouillon
-        </Badge>
-        <Badge tone={r.draftLessons > 0 ? 'warning' : 'neutral'}>
-          {r.draftLessons} leçon(s) en brouillon
-        </Badge>
-        <Badge tone={r.tooLightLessons > 0 ? 'warning' : 'neutral'}>
-          {r.tooLightLessons} leçon(s) trop légère(s)
-        </Badge>
-        <Badge tone={r.lessonsMissingSections > 0 ? 'warning' : 'neutral'}>
-          {r.lessonsMissingSections} avec sections manquantes
-        </Badge>
-        <Badge tone="neutral">
-          {r.visibleLessons} / {r.totalLessons} visible(s) aux étudiants
-        </Badge>
+      <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
+        <Stat
+          value={String(r.draftModules)}
+          label="modules en brouillon"
+          alert={r.draftModules > 0}
+        />
+        <Stat
+          value={String(r.draftLessons)}
+          label="leçons en brouillon"
+          alert={r.draftLessons > 0}
+        />
+        <Stat
+          value={String(r.tooLightLessons)}
+          label="leçons trop légères"
+          alert={r.tooLightLessons > 0}
+        />
+        <Stat
+          value={String(r.lessonsMissingSections)}
+          label="avec sections manquantes"
+          alert={r.lessonsMissingSections > 0}
+        />
+        <Stat
+          value={`${r.visibleLessons} / ${r.totalLessons}`}
+          label="visibles aux étudiants"
+        />
       </div>
 
       {r.publishedTooLight > 0 && (
@@ -572,20 +611,17 @@ function ModuleNav({
 
   return (
     <Card className={focused ? 'border-apple/40' : undefined}>
-      <CardHeader
-        title={`${module.order + 1}. ${module.title}`}
-        action={
-          <Badge tone={published ? 'success' : 'warning'}>
-            {published ? 'Publié' : 'Brouillon'}
-          </Badge>
-        }
-      />
+      <p className="text-[15px] font-medium leading-snug text-ink">
+        {module.order + 1}. {module.title}
+      </p>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <VisibilityBadge visibility={module.visibility} />
-        <span className="text-ink/45 text-sm">
-          {module.publishedLessonCount} / {module.lessons.length} leçon(s)
-          publiée(s)
+      <div className="mb-3 mt-1.5 flex flex-wrap items-center gap-2">
+        <Badge tone={published ? 'success' : 'warning'}>
+          {published ? 'Publié' : 'Brouillon'}
+        </Badge>
+        <span className="text-ink/45 text-xs">
+          {module.visibility.visible ? 'visible' : 'masqué'} ·{' '}
+          {module.publishedLessonCount}/{module.lessons.length} publiée(s)
         </span>
       </div>
 
@@ -634,48 +670,50 @@ function ModuleNav({
         ))}
       </ul>
 
-      {published ? (
-        <Button
-          variant="secondary"
-          size="md"
-          className="mt-3 w-full"
-          loading={busy === `module:${module.id}`}
-          onClick={() =>
-            onPublishModule(
-              { published: false },
-              `module:${module.id}`,
-              'Module dépublié'
-            )
-          }
-        >
-          Dépublier le module
-        </Button>
-      ) : (
-        <>
+      <div className="mt-3 border-t border-hairline pt-3">
+        {published ? (
           <Button
+            variant="secondary"
             size="md"
-            className="mt-3 w-full"
-            disabled={module.publishedLessonCount === 0}
+            className="w-full"
             loading={busy === `module:${module.id}`}
             onClick={() =>
               onPublishModule(
-                { published: true },
+                { published: false },
                 `module:${module.id}`,
-                'Module publié'
+                'Module dépublié'
               )
             }
           >
-            Publier le module
+            Dépublier le module
           </Button>
-          {module.publishedLessonCount === 0 && (
-            <p className="text-ink/45 mt-2 text-sm">
-              {module.lessons.length === 0
-                ? 'Ce module n’a aucune leçon.'
-                : 'Publiez d’abord au moins une leçon : un module sans leçon publiée apparaîtrait vide aux étudiants.'}
-            </p>
-          )}
-        </>
-      )}
+        ) : (
+          <>
+            <Button
+              size="md"
+              className="w-full"
+              disabled={module.publishedLessonCount === 0}
+              loading={busy === `module:${module.id}`}
+              onClick={() =>
+                onPublishModule(
+                  { published: true },
+                  `module:${module.id}`,
+                  'Module publié'
+                )
+              }
+            >
+              Publier le module
+            </Button>
+            {module.publishedLessonCount === 0 && (
+              <p className="text-ink/45 mt-2 text-xs leading-relaxed">
+                {module.lessons.length === 0
+                  ? 'Ce module n’a aucune leçon.'
+                  : 'Publiez d’abord une leçon : un module sans leçon publiée apparaîtrait vide aux étudiants.'}
+              </p>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Suppression du module : conséquences annoncées avant tout effet. */}
       <div className="mt-3">
@@ -718,7 +756,7 @@ function ModuleNav({
 
       {/* Seule action groupée autorisée, et jamais sans confirmation. */}
       {draftLessons.length > 0 && (
-        <div className="mt-3">
+        <div className="mt-2">
           {bulkWarning ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
               <p className="text-sm text-amber-800">
@@ -759,6 +797,7 @@ function ModuleNav({
           )}
         </div>
       )}
+
     </Card>
   )
 }

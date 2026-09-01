@@ -127,25 +127,21 @@ export function MetadataPanel({
   }
 
   return (
-    <Card>
-      <CardHeader
-        title="Informations"
-        action={
-          <button
-            onClick={() => setOpen((v) => !v)}
-            className="text-sm font-medium text-apple hover:underline"
-          >
-            {open ? 'Masquer' : 'Modifier'}
-          </button>
-        }
-      />
-
-      {!open ? (
-        <p className="text-ink/45 text-sm">
-          Titre, description, durée et ordre du module et de la leçon
-          sélectionnés.
+    <Card className={open ? undefined : 'py-3'}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-ink/50 min-w-0 truncate text-sm">
+          <span className="font-medium text-ink">Informations</span> · titre,
+          description, durée et ordre
         </p>
-      ) : (
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="shrink-0 text-sm font-medium text-apple hover:underline"
+        >
+          {open ? 'Masquer' : 'Modifier'}
+        </button>
+      </div>
+
+      {!open ? null : (
         <div className="space-y-6">
           <section>
             <p className="mb-3 text-[15px] font-medium text-ink">Module</p>

@@ -118,7 +118,7 @@ const READINESS_TONES: Record<Readiness, 'warning' | 'neutral' | 'success'> = {
 
 const TEXT_SECTIONS = [
   { key: 'introduction', label: 'Introduction', rows: 4 },
-  { key: 'explanation', label: 'Explication', rows: 12 },
+  { key: 'explanation', label: 'Explication', rows: 10 },
   { key: 'practicalExample', label: 'Exemple pratique', rows: 6 },
   { key: 'recap', label: 'Récapitulatif', rows: 4 },
 ] as const
@@ -208,10 +208,14 @@ function SectionActions({
 
   return (
     <>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-hairline pt-3">
         <Button size="md" loading={saving} onClick={onSave}>
           Enregistrer
         </Button>
+
+        <span aria-hidden="true" className="text-ink/15 hidden sm:inline">
+          |
+        </span>
 
         {empty ? (
           <Button
@@ -256,7 +260,7 @@ function SectionActions({
         {!empty && !confirmClear && (
           <button
             onClick={onAskClear}
-            className="text-sm font-medium text-red-500 hover:underline"
+            className="ml-auto text-sm font-medium text-red-500 hover:underline"
           >
             Effacer
           </button>
@@ -514,14 +518,12 @@ export function LessonSectionEditor({
             <Badge tone={READINESS_TONES[lesson.quality.readiness]}>
               {READINESS_LABELS[lesson.quality.readiness]}
             </Badge>
-            <Badge tone="neutral">
-              {isStructured ? 'Structurée' : 'Texte simple'}
-            </Badge>
             <VisibilityBadge visibility={lesson.visibility} />
           </div>
         </div>
 
         <p className="text-ink/45 mt-3 text-sm">
+          {isStructured ? 'Structurée' : 'Texte simple'} ·{' '}
           {lesson.quality.contentLength} caractères
           {lesson.quality.targetLength
             ? ` · ~${lesson.quality.targetLength} attendus pour ${lesson.estimatedMinutes} min`
@@ -650,7 +652,7 @@ export function LessonSectionEditor({
       </Card>
 
       {showStudentPreview && (
-        <Card className="border-apple/30">
+        <Card className="border-hairline bg-cloud/50">
           <CardHeader
             title="Aperçu étudiant"
             action={<VisibilityBadge visibility={lesson.visibility} />}
@@ -695,7 +697,7 @@ export function LessonSectionEditor({
       )}
 
       {preview && (
-        <Card className="border-apple/30">
+        <Card className="border-apple/40 bg-oca-tint/40">
           <CardHeader
             title={`Aperçu — ${MODE_LABELS[preview.mode]}`}
             action={<Badge tone="warning">Brouillon IA à relire</Badge>}
