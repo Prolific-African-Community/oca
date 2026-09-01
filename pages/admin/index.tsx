@@ -13,9 +13,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Reveal } from '../../components/anim/Reveal';
 import { Drawer } from '../../components/overlay/Drawer';
-import { AssignmentDrawer } from '../../components/admin/AssignmentDrawer';
 import { AuditFeed } from '../../components/admin/AuditFeed';
-import type { Assignment, Teacher } from '../../components/admin/AssignmentDrawer';
 import { useToast } from '../../components/overlay/Toast';
 import { useRegisterCommands } from '../../components/overlay/command';
 import { useCurrentUser } from '../../lib/auth';
@@ -28,6 +26,29 @@ import {
   CheckIcon,
   CapIcon,
 } from '../../components/ui/icons';
+
+/** Enseignants et affectations, tels que les servent les routes /api/admin. */
+interface Teacher {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  assignmentCount: number;
+}
+
+interface Assignment {
+  id: string;
+  role: string;
+  user: { id: string; firstName: string | null; lastName: string | null; email: string };
+  course: {
+    id: string;
+    title: string;
+    code: string;
+    credits: number;
+    program: { name: string; code: string };
+    semester: { name: string };
+  };
+}
 
 /** Structure académique réelle de l'établissement, servie par /api/admin/structure. */
 interface Structure {
@@ -69,7 +90,6 @@ export default function AdminWorkspace() {
   const [students, setStudents] = useState<any[]>([]);
   const [structure, setStructure] = useState<Structure>(EMPTY_STRUCTURE);
   const [drawer, setDrawer] = useState(false);
-  const [assignmentDrawer, setAssignmentDrawer] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
 
@@ -211,7 +231,7 @@ export default function AdminWorkspace() {
         hint: 'Enseignant ↔ cours',
         group: 'Actions',
         icon: <UsersIcon size={17} />,
-        perform: () => setAssignmentDrawer(true),
+        perform: () => router.push('/admin/professors'),
       },
       {
         id: 'admin:structure',
@@ -284,24 +304,25 @@ export default function AdminWorkspace() {
                 <span className="text-ink/50">Prochaine étape · </span>
                 {setup.next.label}
               </p>
-              {setup.next.action === 'structure' ? (
-                <Link
-                  href={`/admin/structure?tab=${setup.next.tab ?? 'faculty'}`}
-                  className={buttonClasses('primary', 'md', 'no-underline')}
-                >
-                  Faire maintenant
-                </Link>
-              ) : (
+              {/* Chaque étape mène là où elle se traite réellement. */}
+              {setup.next.action === 'student' ? (
                 <button
-                  onClick={() =>
-                    setup.next?.action === 'student'
-                      ? setDrawer(true)
-                      : setAssignmentDrawer(true)
-                  }
+                  onClick={() => setDrawer(true)}
                   className={buttonClasses('primary', 'md')}
                 >
                   Faire maintenant
                 </button>
+              ) : (
+                <Link
+                  href={
+                    setup.next.action === 'assignment'
+                      ? '/admin/professors?mode=assign'
+                      : `/admin/structure?tab=${setup.next.tab ?? 'faculty'}`
+                  }
+                  className={buttonClasses('primary', 'md', 'no-underline')}
+                >
+                  Faire maintenant
+                </Link>
               )}
             </div>
           ) : (
@@ -358,12 +379,12 @@ export default function AdminWorkspace() {
             >
               Configurer la structure
             </Link>
-            <button
-              onClick={() => setAssignmentDrawer(true)}
-              className={buttonClasses('secondary', 'md')}
+            <Link
+              href="/admin/professors?mode=assign"
+              className={buttonClasses('secondary', 'md', 'no-underline')}
             >
               Affecter un professeur
-            </button>
+            </Link>
             <Link
               href="/admin/structure?tab=course"
               className={buttonClasses('secondary', 'md', 'no-underline')}
@@ -502,8 +523,8 @@ export default function AdminWorkspace() {
         id="professeurs"
         title="Professeurs"
         description="Les enseignants et les cours dont ils ont la charge."
-        actionLabel="Affecter un professeur"
-        onAction={() => setAssignmentDrawer(true)}
+        actionLabel="Gérer les professeurs"
+        actionHref="/admin/professors"
       >
         {teachers.length === 0 ? (
           <EmptyState
@@ -610,19 +631,6 @@ export default function AdminWorkspace() {
       >
         <AuditFeed limit={8} />
       </Section>
-
-      <AssignmentDrawer
-        open={assignmentDrawer}
-        onClose={() => setAssignmentDrawer(false)}
-        structure={structure}
-        teachers={teachers}
-        assignments={assignments}
-        onChanged={(message) => {
-          fetchTeaching();
-          toast({ title: 'Affectation enregistrée', description: message, tone: 'success' });
-        }}
-        onError={(message) => toast({ title: 'Action impossible', description: message, tone: 'error' })}
-      />
 
       <CreateStudentDrawer
         open={drawer}
