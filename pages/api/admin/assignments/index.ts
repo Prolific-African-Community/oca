@@ -1,8 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { Prisma, Role, TeacherAssignmentRole } from '@prisma/client';
-import { prisma } from '../../../lib/prisma';
-import { requireInstitutionRole } from '../../../lib/serverAuth';
-import { AuditAction, createAuditLog } from '../../../lib/audit';
+import { prisma } from '../../../../lib/prisma';
+import { requireInstitutionRole } from '../../../../lib/serverAuth';
+import { AuditAction, createAuditLog } from '../../../../lib/audit';
 
 /**
  * Affectation des enseignants aux cours, dans le périmètre de l'administrateur.

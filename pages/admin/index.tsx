@@ -34,6 +34,8 @@ interface Teacher {
   firstName: string;
   lastName: string;
   assignmentCount: number;
+  /** Un enseignant sans accès reste listé mais ne compte pas comme actif. */
+  isActive: boolean;
 }
 
 interface Assignment {
@@ -252,6 +254,11 @@ export default function AdminWorkspace() {
     [students]
   );
 
+  const activeTeachers = useMemo(
+    () => teachers.filter((t) => t.isActive !== false),
+    [teachers]
+  );
+
   const coursesWithoutTeacher = useMemo(() => {
     const taught = new Set(assignments.map((a) => a.course.id));
     return structure.courses.filter((c) => !taught.has(c.id)).length;
@@ -345,7 +352,7 @@ export default function AdminWorkspace() {
           />
           <Metric
             label="Professeurs"
-            value={teachers.length}
+            value={activeTeachers.length}
             hint={`${assignments.length} affectation(s)`}
           />
           <Metric
@@ -526,7 +533,7 @@ export default function AdminWorkspace() {
         actionLabel="Gérer les professeurs"
         actionHref="/admin/professors"
       >
-        {teachers.length === 0 ? (
+        {activeTeachers.length === 0 ? (
           <EmptyState
             icon={<CapIcon size={22} />}
             title="Aucun professeur enregistré"
@@ -534,7 +541,7 @@ export default function AdminWorkspace() {
           />
         ) : (
           <ul className="space-y-1">
-            {teachers.slice(0, 6).map((t) => {
+            {activeTeachers.slice(0, 6).map((t) => {
               // Le compte est déjà calculé côté API pour chaque enseignant.
               const count = t.assignmentCount
               return (

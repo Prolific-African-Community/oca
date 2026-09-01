@@ -1,9 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import bcrypt from 'bcryptjs';
 import { Role } from '@prisma/client';
-import { prisma } from '../../../lib/prisma';
-import { requireInstitutionRole } from '../../../lib/serverAuth';
-import { AuditAction, createAuditLog } from '../../../lib/audit';
+import { prisma } from '../../../../lib/prisma';
+import { requireInstitutionRole } from '../../../../lib/serverAuth';
+import { AuditAction, createAuditLog } from '../../../../lib/audit';
 
 /**
  * Enseignants de l'établissement de l'administrateur connecté.
@@ -27,10 +27,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader('Cache-Control', 'no-store');
 
     const memberships = await prisma.institutionUser.findMany({
-      where: { institutionId: scope.institutionId, role: Role.PROFESSOR, isActive: true },
+      // Les comptes désactivés restent listés : les masquer priverait
+      // l'administrateur du seul moyen de les réactiver.
+      where: { institutionId: scope.institutionId, role: Role.PROFESSOR },
       orderBy: { createdAt: 'asc' },
       select: {
         createdAt: true,
+        isActive: true,
         user: {
           select: {
             id: true,
@@ -50,12 +53,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     return res.status(200).json(
-      memberships.map(({ user, createdAt }) => ({
+      memberships.map(({ user, createdAt, isActive }) => ({
         id: user.id,
         email: user.email,
         firstName: user.firstName ?? '',
         lastName: user.lastName ?? '',
         assignmentCount: user._count.courseAssignments,
+        isActive,
         createdAt,
       }))
     );
@@ -124,5 +128,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     metadata: { email: teacher.email },
   });
 
-  return res.status(201).json({ ...teacher, assignmentCount: 0 });
+  return res.status(201).json({ ...teacher, assignmentCount: 0, isActive: true });
 }
