@@ -2,6 +2,11 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { CourseStatus, InstitutionStatus, Role } from '@prisma/client';
 import { prisma } from '../../../lib/prisma';
 import { requirePlatformRole } from '../../../lib/serverAuth';
+import {
+  SETUP_TOTAL,
+  computeSetup,
+  setupDone,
+} from '../../../lib/institutionSetup';
 
 /**
  * Vue d'ensemble du réseau pour le super administrateur.
@@ -136,22 +141,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const semesters = semesterCount.get(i.id) ?? 0;
       const admin = i.members[0]?.user ?? null;
 
-      /**
-       * Avancement de la mise en route, dans l'ordre des dépendances réelles :
-       * sans faculté pas de programme, sans semestre pas de cours, sans cours
-       * rien à enseigner. Chaque étape est vraie ou fausse d'après la base.
-       */
-      const setup = {
-        faculty: i._count.faculties > 0,
-        program: i._count.programs > 0,
-        academicYear: i._count.academicYears > 0,
-        semester: semesters > 0,
-        course: i._count.courses > 0,
-        professor: counts.professors > 0,
-        student: counts.students > 0,
-      };
-      const steps = Object.keys(setup) as (keyof typeof setup)[];
-      const done = steps.filter((key) => setup[key]).length;
+      // Calculé par `lib/institutionSetup`, comme sur la fiche détaillée :
+      // les deux écrans ne peuvent pas diverger.
+      const setup = computeSetup({
+        faculties: i._count.faculties,
+        programs: i._count.programs,
+        academicYears: i._count.academicYears,
+        semesters,
+        courses: i._count.courses,
+        professors: counts.professors,
+        students: counts.students,
+      });
+      const done = setupDone(setup);
 
       return {
         id: i.id,
@@ -169,7 +170,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         lastActivityAt: lastActivityAt.get(i.id) ?? null,
         setup,
         setupDone: done,
-        setupTotal: steps.length,
+        setupTotal: SETUP_TOTAL,
         counts: {
           ...counts,
           programs: i._count.programs,

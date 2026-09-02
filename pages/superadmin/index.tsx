@@ -1,6 +1,7 @@
 import { Role } from '@prisma/client'
 import { requireRoleSSR } from '../../lib/pageGuard'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { AppShell } from '../../components/app/AppShell'
 import { Card } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
@@ -294,6 +295,16 @@ export default function SuperAdminCockpit() {
                   ce soit. Rattachez-lui un administrateur pour le rendre
                   exploitable.
                 </p>
+                <Link
+                  href={`/superadmin/institutions/${u.id}`}
+                  className={buttonClasses(
+                    'secondary',
+                    'md',
+                    'no-underline mt-3'
+                  )}
+                >
+                  Rattacher un administrateur
+                </Link>
               </li>
             ))}
             {incompletes
@@ -389,12 +400,18 @@ export default function SuperAdminCockpit() {
                     </p>
 
                     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <Link
+                        href={`/superadmin/institutions/${u.id}`}
+                        className="text-sm font-medium text-oca hover:underline"
+                      >
+                        Voir détail
+                      </Link>
                       <button
                         onClick={() => setExpanded(ouvert ? null : u.id)}
                         className="text-ink/50 text-sm font-medium hover:underline"
                         aria-expanded={ouvert}
                       >
-                        {ouvert ? 'Masquer le détail' : 'Voir le détail'}
+                        {ouvert ? 'Masquer' : 'Aperçu rapide'}
                       </button>
                       <span className="text-ink/35 text-sm">
                         {u.lastActivityAt
@@ -444,6 +461,16 @@ export default function SuperAdminCockpit() {
                           La structure académique se gère depuis l’espace de
                           l’établissement, par son administrateur.
                         </p>
+                        <Link
+                          href={`/superadmin/institutions/${u.id}`}
+                          className={buttonClasses(
+                            'secondary',
+                            'md',
+                            'no-underline mt-3'
+                          )}
+                        >
+                          Ouvrir la fiche
+                        </Link>
                       </div>
                     )}
                   </li>

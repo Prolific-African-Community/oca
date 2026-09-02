@@ -16,6 +16,10 @@ import { prisma } from './prisma'
 /** Verbes métier journalisés. Un seul endroit pour les nommer. */
 export const AuditAction = {
   INSTITUTION_CREATE: 'institution.create',
+  /** Compte administrateur créé pour un établissement déjà existant. */
+  INSTITUTION_ADMIN_CREATE: 'institution.admin.create',
+  /** Compte déjà existant promu administrateur d'un établissement. */
+  INSTITUTION_ADMIN_ATTACH: 'institution.admin.attach',
   STRUCTURE_CREATE: 'structure.create',
   STRUCTURE_UPDATE: 'structure.update',
   STRUCTURE_ARCHIVE: 'structure.archive',
