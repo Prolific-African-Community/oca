@@ -63,7 +63,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     prisma.academicYear.findMany({
       where: { institutionId },
       orderBy: { startDate: 'desc' },
-      select: { id: true, name: true, isCurrent: true, status: true },
+      select: {
+        id: true,
+        name: true,
+        isCurrent: true,
+        status: true,
+        // Nécessaires pour préremplir le formulaire de correction.
+        startDate: true,
+        endDate: true,
+      },
     }),
     prisma.semester.findMany({
       where: { program: { institutionId } },
@@ -73,6 +81,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         name: true,
         number: true,
         status: true,
+        startDate: true,
+        endDate: true,
         programId: true,
         academicYearId: true,
         _count: { select: { courses: true } },
@@ -86,6 +96,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         title: true,
         code: true,
         credits: true,
+        coefficient: true,
+        description: true,
         status: true,
         programId: true,
         semesterId: true,

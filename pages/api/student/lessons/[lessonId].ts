@@ -1,29 +1,40 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { ContentStatus, ProgressStatus } from '@prisma/client';
-import { prisma } from '../../../../lib/prisma';
-import { accessibleCourseWhere, requireStudent } from '../../../../lib/studentAccess';
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { ContentStatus, ProgressStatus } from '@prisma/client'
+import { prisma } from '../../../../lib/prisma'
+import {
+  accessibleCourseWhere,
+  requireStudent,
+} from '../../../../lib/studentAccess'
+import { asStructuredLessonContent } from '../../../../lib/lessonContent'
 
 /**
  * Leçon consultée par un étudiant.
  * La leçon doit être publiée, dans un module publié, d'un cours d'un semestre
  * où l'étudiant est inscrit. Toute autre situation renvoie 404.
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
   if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ message: 'Méthode non autorisée' });
+    res.setHeader('Allow', 'GET')
+    return res.status(405).json({ message: 'Méthode non autorisée' })
   }
 
-  const scope = await requireStudent(req, res);
-  if (!scope) return;
+  const scope = await requireStudent(req, res)
+  if (!scope) return
 
-  const { lessonId } = req.query;
+  const { lessonId } = req.query
 
-  if (typeof lessonId !== 'string' || !lessonId || scope.semesterIds.length === 0) {
-    return res.status(404).json({ message: 'Leçon introuvable' });
+  if (
+    typeof lessonId !== 'string' ||
+    !lessonId ||
+    scope.semesterIds.length === 0
+  ) {
+    return res.status(404).json({ message: 'Leçon introuvable' })
   }
 
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store')
 
   const lesson = await prisma.lesson.findFirst({
     where: {
@@ -38,6 +49,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       id: true,
       title: true,
       content: true,
+      contentJson: true,
       estimatedMinutes: true,
       order: true,
       module: {
@@ -53,29 +65,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         },
       },
     },
-  });
+  })
 
-  if (!lesson) return res.status(404).json({ message: 'Leçon introuvable' });
+  if (!lesson) return res.status(404).json({ message: 'Leçon introuvable' })
 
   // Navigation séquentielle à l'intérieur du module.
-  const siblings = lesson.module.lessons;
-  const index = siblings.findIndex((l) => l.id === lesson.id);
+  const siblings = lesson.module.lessons
+  const index = siblings.findIndex((l) => l.id === lesson.id)
 
   const progress = await prisma.lessonProgress.findUnique({
     where: { userId_lessonId: { userId: scope.user.id, lessonId: lesson.id } },
-    select: { status: true, firstViewedAt: true, lastViewedAt: true, completedAt: true },
-  });
+    select: {
+      status: true,
+      firstViewedAt: true,
+      lastViewedAt: true,
+      completedAt: true,
+    },
+  })
 
   return res.status(200).json({
     id: lesson.id,
     title: lesson.title,
     content: lesson.content,
+    contentJson: asStructuredLessonContent(lesson.contentJson),
     estimatedMinutes: lesson.estimatedMinutes,
     module: { id: lesson.module.id, title: lesson.module.title },
     course: lesson.module.course,
     position: { index: index + 1, total: siblings.length },
     previous: index > 0 ? siblings[index - 1] : null,
-    next: index >= 0 && index < siblings.length - 1 ? siblings[index + 1] : null,
-    progress: progress ?? { status: ProgressStatus.NOT_STARTED, completedAt: null },
-  });
+    next:
+      index >= 0 && index < siblings.length - 1 ? siblings[index + 1] : null,
+    progress: progress ?? {
+      status: ProgressStatus.NOT_STARTED,
+      completedAt: null,
+    },
+  })
 }

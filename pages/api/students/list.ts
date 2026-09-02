@@ -19,24 +19,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     where: {
       institutionId: scope.institutionId,
       role: Role.STUDENT,
-      isActive: true,
+      // Les comptes sans accès restent listés : les masquer priverait
+      // l'administrateur du seul moyen de les retrouver.
     },
     orderBy: { createdAt: 'asc' },
     select: {
       createdAt: true,
+      isActive: true,
       user: {
         select: {
           id: true,
           email: true,
           firstName: true,
           lastName: true,
+          // Tout l'historique : la progression conserve les inscriptions
+          // closes, et l'administrateur doit pouvoir le constater.
           enrollments: {
             where: { institutionId: scope.institutionId },
-            orderBy: { enrolledAt: 'desc' },
-            take: 1,
+            orderBy: [{ status: 'asc' }, { enrolledAt: 'desc' }],
             select: {
+              id: true,
               status: true,
-              semester: { select: { name: true } },
+              programId: true,
+              semesterId: true,
+              semester: {
+                select: {
+                  name: true,
+                  academicYear: { select: { id: true, name: true } },
+                },
+              },
               program: {
                 select: { name: true, faculty: { select: { name: true } } },
               },
@@ -50,8 +61,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Forme conservée telle que l'attend l'écran /admin :
   // { id, firstName, lastName, email, faculty, program }.
   return res.status(200).json(
-    memberships.map(({ user, createdAt }) => {
-      const enrollment = user.enrollments[0];
+    memberships.map(({ user, createdAt, isActive }) => {
+      // Les champs plats décrivent l'inscription active ; l'historique est
+      // fourni à part, pour ne rien changer aux écrans existants.
+      const enrollment =
+        user.enrollments.find((e) => e.status === 'ACTIVE') ??
+        user.enrollments[0];
 
       return {
         id: user.id,
@@ -62,6 +77,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         program: enrollment?.program.name ?? '—',
         semester: enrollment?.semester.name ?? null,
         enrollmentStatus: enrollment?.status ?? null,
+        enrollmentId: enrollment?.id ?? null,
+        // Ajouts pour l'espace Étudiants : cohortes, filtres, état d'accès.
+        programId: enrollment?.programId ?? null,
+        semesterId: enrollment?.semesterId ?? null,
+        academicYear: enrollment?.semester.academicYear.name ?? null,
+        academicYearId: enrollment?.semester.academicYear.id ?? null,
+        isActive,
+        enrollments: user.enrollments.map((e) => ({
+          id: e.id,
+          status: e.status,
+          program: e.program.name,
+          programId: e.programId,
+          semester: e.semester.name,
+          semesterId: e.semesterId,
+          academicYear: e.semester.academicYear.name,
+        })),
         createdAt,
       };
     })

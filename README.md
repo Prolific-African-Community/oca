@@ -77,6 +77,100 @@ Their password is the value of `SEED_PASSWORD`. For local development only,
 the seed falls back to `Oca2026!`; set an explicit non-default value for any
 shared demo or deployed environment.
 
+## Course Studio test dataset
+
+Do not test destructive flows on real course content. Publishing, unpublishing,
+clearing a section and AI generation all overwrite data in place, and there is
+no content versioning: an interrupted run can leave a real lesson published or
+emptied.
+
+Use the dedicated demo dataset instead:
+
+```bash
+npm run seed:studio-test
+```
+
+It creates a separate institution (`demo-studio`), so isolation comes from the
+existing multi-tenant scoping rather than from discipline: the demo professor
+cannot reach real courses, and real accounts cannot reach the demo course.
+
+| Account | Role |
+| --- | --- |
+| `prof.demo@demo-studio.oca.africa` | professor, assigned to the demo course |
+| `etudiant.demo@demo-studio.oca.africa` | student, enrolled in the demo semester |
+| `admin.demo@demo-studio.oca.africa` | institution admin |
+
+Passwords follow `SEED_PASSWORD`, as for the main seed.
+
+Course to use: **TEST-COURSE-STUDIO**, shown as `DEMO - Cours de test Course
+Studio`. Course Studio displays an amber banner for any course whose code starts
+with `TEST-` or `DEMO-`. The dataset deliberately covers the cases worth
+testing: a strong published structured lesson, a weak draft lesson (which
+triggers the publish confirmation), a plain-text lesson (editor fallback), a
+published lesson inside a draft module (hidden from students), a published quiz
+and an empty draft quiz.
+
+The script is idempotent and re-runnable: it upserts the institution, accounts
+and academic structure, then deletes and recreates the modules, lessons and
+quizzes **of that course only**. It never touches other courses, users, audit
+logs or `AIGeneration` records.
+
+To prove real content was untouched, fingerprint COMPTA-101 and MICRO-101 before
+and after any test session:
+
+```bash
+npx tsx scripts/check-demo-isolation.ts
+```
+
+## Database backup
+
+The repository protects the code. It does not protect the data. Courses,
+modules, lessons, audit logs and `AIGeneration` records exist only in
+PostgreSQL, and the product has no content versioning: a deletion or an
+overwrite is final. Take a backup before any run that deletes or rewrites
+content.
+
+```bash
+npm run db:backup
+```
+
+The script reads `DIRECT_URL` (preferred, non-pooled) or `DATABASE_URL` from
+`.env`, and writes `backups/oca-YYYYMMDD-HHMMSS.dump` in PostgreSQL custom
+format. The connection string is never printed and is passed to `pg_dump`
+through `PGHOST` / `PGPASSWORD` environment variables rather than command-line
+arguments, so the password does not appear in the process list.
+
+`pg_dump` must be installed and at least as recent as the server (currently
+PostgreSQL 18). If it is missing, the script explains the alternatives rather
+than failing silently:
+
+- Neon console: `Project > Backups`, or create a database branch. This needs no
+  local tooling and is the fastest option.
+- Install the PostgreSQL client tools (on Windows, the installer allows
+  selecting *Command Line Tools* only).
+- Run `pg_dump` from a `postgres:18` Docker image.
+
+### Restoring
+
+Restore into a **new, empty database first** and inspect it. Never restore
+straight over a live database.
+
+```bash
+createdb oca_restore
+pg_restore --dbname=oca_restore --no-owner --no-privileges backups/oca-YYYYMMDD-HHMMSS.dump
+```
+
+On Neon, create a new branch or database, restore into it, verify the data, and
+only then point `DATABASE_URL` at it.
+
+### Handling backup files
+
+A dump contains every production record, including password hashes and audit
+entries. Treat it as a secret: `backups/`, `*.dump` and `*.sql.gz` are
+gitignored, and backup files must never be committed, attached to an issue, or
+uploaded to a third-party service. Store them encrypted, and delete copies you
+no longer need.
+
 ## Verification
 
 ```bash

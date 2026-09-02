@@ -12,9 +12,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const base =
-  'inline-flex items-center justify-center gap-2 rounded-full font-medium ' +
-  'transition-all duration-300 ease-out select-none disabled:opacity-50 ' +
-  'disabled:pointer-events-none active:scale-[0.98]';
+  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap ' +
+  'rounded-full font-medium transition-all duration-300 ease-out select-none ' +
+  'disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]';
 
 const variants: Record<Variant, string> = {
   primary: 'bg-oca text-white hover:bg-oca-600 shadow-soft',

@@ -1,21 +1,24 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { prisma } from '../../../../../lib/prisma';
-import { requireAssignedCourse } from '../../../../../lib/teacherAccess';
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { prisma } from '../../../../../lib/prisma'
+import { requireAssignedCourse } from '../../../../../lib/teacherAccess'
 
 /**
  * Détail d'un cours enseigné : métadonnées, modules et leçons.
  * Accessible au seul professeur affecté à ce cours.
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
   if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ message: 'Méthode non autorisée' });
+    res.setHeader('Allow', 'GET')
+    return res.status(405).json({ message: 'Méthode non autorisée' })
   }
 
-  const access = await requireAssignedCourse(req, res, req.query.courseId);
-  if (!access) return;
+  const access = await requireAssignedCourse(req, res, req.query.courseId)
+  if (!access) return
 
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store')
 
   const course = await prisma.course.findUnique({
     where: { id: access.courseId },
@@ -50,6 +53,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               id: true,
               title: true,
               content: true,
+              contentJson: true,
               order: true,
               estimatedMinutes: true,
               status: true,
@@ -58,9 +62,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         },
       },
     },
-  });
+  })
 
-  if (!course) return res.status(404).json({ message: 'Cours introuvable' });
+  if (!course) return res.status(404).json({ message: 'Cours introuvable' })
 
   return res.status(200).json({
     ...course,
@@ -72,5 +76,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       isCurrentYear: course.semester.academicYear.isCurrent,
     },
     assignmentRole: access.assignmentRole,
-  });
+  })
 }

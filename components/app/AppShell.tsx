@@ -54,7 +54,12 @@ export function AppShell({ role, title, subtitle, action, bareHeader, maxWidth =
 
   return (
     <div className="min-h-screen bg-page text-ink">
-      <Sidebar nav={meta.nav} home={meta.home} onLogout={onLogout} />
+      <Sidebar
+        nav={meta.nav}
+        home={meta.home}
+        settingsHref={meta.settings}
+        onLogout={onLogout}
+      />
 
       <div className="md:pl-[100px] md:pr-4">
         <div className={`mx-auto ${maxWidth === 'narrow' ? 'max-w-5xl' : 'max-w-6xl'} px-5 pb-28 pt-2 sm:px-8 md:pb-12`}>
@@ -66,6 +71,7 @@ export function AppShell({ role, title, subtitle, action, bareHeader, maxWidth =
             roleLabel={meta.label}
             onLogout={onLogout}
             onOpenCommand={() => setOpen(true)}
+            settingsHref={meta.settings}
             bare={bareHeader}
           />
           <main className="pt-4">{children}</main>

@@ -8,6 +8,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "seed:studio-test": "tsx prisma/seed-studio-test.ts",
+    "db:backup": "tsx scripts/backup-db.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
   },
