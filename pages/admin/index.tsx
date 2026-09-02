@@ -12,6 +12,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Reveal } from '../../components/anim/Reveal';
 import { AuditFeed } from '../../components/admin/AuditFeed';
+import { LoadError } from '../../components/admin/LoadState';
 import { useToast } from '../../components/overlay/Toast';
 import { useRegisterCommands } from '../../components/overlay/command';
 import { useCurrentUser } from '../../lib/auth';
@@ -86,38 +87,43 @@ export default function AdminWorkspace() {
   const [structure, setStructure] = useState<Structure>(EMPTY_STRUCTURE);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
-  const fetchStudents = () => {
-    fetch('/api/students/list')
-      .then((r) => r.json())
-      .then((d) => setStudents(Array.isArray(d) ? d : []))
-      .catch(() => setStudents([]));
-  };
-  useEffect(fetchStudents, []);
+  /**
+   * Le cockpit ne peut pas se contenter d'écrans vides en cas de panne : ses
+   * chiffres et sa liste d'étapes seraient faux plutôt qu'absents. Un échec de
+   * chargement est donc affiché, avec une relance manuelle.
+   */
+  const load = useCallback(async () => {
+    const responses = await Promise.all([
+      fetch('/api/students/list'),
+      fetch('/api/admin/structure'),
+      fetch('/api/admin/teachers'),
+      fetch('/api/admin/assignments'),
+    ]);
+    if (responses.some((r) => !r.ok)) throw new Error('unavailable');
 
-  const fetchStructure = useCallback(() => {
-    return fetch('/api/admin/structure')
-      .then((r) => (r.ok ? r.json() : EMPTY_STRUCTURE))
-      .then((d) => setStructure({ ...EMPTY_STRUCTURE, ...d }))
-      .catch(() => setStructure(EMPTY_STRUCTURE));
+    const [list, struct, t, a] = await Promise.all(
+      responses.map((r) => r.json())
+    );
+    setStudents(Array.isArray(list) ? list : []);
+    setStructure({ ...EMPTY_STRUCTURE, ...struct });
+    setTeachers(Array.isArray(t) ? t : []);
+    setAssignments(Array.isArray(a) ? a : []);
+    setLoadFailed(false);
   }, []);
 
-  const fetchTeaching = useCallback(() => {
-    fetch('/api/admin/teachers')
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setTeachers(Array.isArray(d) ? d : []))
-      .catch(() => setTeachers([]));
-
-    fetch('/api/admin/assignments')
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setAssignments(Array.isArray(d) ? d : []))
-      .catch(() => setAssignments([]));
-  }, []);
+  const retry = useCallback(() => {
+    setRetrying(true);
+    load()
+      .catch(() => setLoadFailed(true))
+      .then(() => setRetrying(false));
+  }, [load]);
 
   useEffect(() => {
-    fetchStructure();
-    fetchTeaching();
-  }, [fetchStructure, fetchTeaching]);
+    load().catch(() => setLoadFailed(true));
+  }, [load]);
 
   /**
    * Mise en route de l'établissement, étape par étape.
@@ -261,6 +267,27 @@ export default function AdminWorkspace() {
     return structure.courses.filter((c) => !taught.has(c.id)).length;
   }, [structure.courses, assignments]);
 
+  const blocked =
+    loadFailed && students.length === 0 && structure.faculties.length === 0;
+
+  /**
+   * Le cockpit ne montre rien plutôt que de mentir : ses étapes de mise en
+   * route se déduiraient de données absentes et annonceraient un établissement
+   * à configurer, alors qu'il l'est peut-être déjà.
+   */
+  if (blocked) {
+    return (
+      <AppShell
+        role="admin"
+        requiredRole="admin"
+        title="Pilotage"
+        subtitle="Votre campus aujourd’hui"
+      >
+        <LoadError onRetry={retry} retrying={retrying} />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell
       role="admin"
@@ -276,6 +303,10 @@ export default function AdminWorkspace() {
         </Link>
       }
     >
+      {loadFailed && (
+        <LoadError className="mb-5" onRetry={retry} retrying={retrying} />
+      )}
+
       {/* ---------------------------------------------- Vue d'ensemble */}
       <Reveal>
         <Card>
@@ -392,6 +423,14 @@ export default function AdminWorkspace() {
             >
               Créer un cours
             </Link>
+            {/* La barre latérale n'existe pas sur mobile : ce raccourci est le
+                seul accès aux paramètres depuis un téléphone. */}
+            <Link
+              href="/admin/settings"
+              className={buttonClasses('secondary', 'md', 'no-underline')}
+            >
+              Paramètres
+            </Link>
           </div>
         </Card>
       </Reveal>
@@ -501,7 +540,7 @@ export default function AdminWorkspace() {
                     </p>
                     <p className="truncate text-sm text-ink/45">{s.email}</p>
                   </div>
-                  <div className="hidden shrink-0 items-center gap-2 sm:flex">
+                  <div className="hidden items-center gap-2 sm:flex">
                     {s.enrollmentStatus ? (
                       <>
                         <Badge tone="brand">{s.faculty}</Badge>

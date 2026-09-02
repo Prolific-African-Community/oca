@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { AppShell } from '../../components/app/AppShell'
+import { LoadError } from '../../components/admin/LoadState'
 import { Card } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { ProgressBar } from '../../components/ui/ProgressBar'
@@ -71,16 +72,30 @@ export default function AdminStructurePage() {
   /** Élément en cours de correction, et confirmation d'archivage. */
   const [editingId, setEditingId] = useState<string | null>(null)
   const [archivingId, setArchivingId] = useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [retrying, setRetrying] = useState(false)
 
+  /**
+   * Un chargement raté est signalé plutôt qu'absorbé : sans cela, l'écran
+   * proposait de créer une faculté qui existe peut-être déjà.
+   */
   const load = useCallback(async () => {
     const response = await fetch('/api/admin/structure')
-    if (!response.ok) return
+    if (!response.ok) throw new Error('unavailable')
     const data = await response.json()
     setStructure({ ...EMPTY, ...data })
+    setLoadFailed(false)
   }, [])
 
+  const retry = useCallback(() => {
+    setRetrying(true)
+    load()
+      .catch(() => setLoadFailed(true))
+      .then(() => setRetrying(false))
+  }, [load])
+
   useEffect(() => {
-    load().catch(() => setStructure(EMPTY))
+    load().catch(() => setLoadFailed(true))
   }, [load])
 
   // `?tab=course` permet d'arriver directement sur la bonne étape.
@@ -126,6 +141,37 @@ export default function AdminStructurePage() {
     })
   }
 
+  // `blocked` désigne déjà, dans cette page, le prérequis manquant d'un
+  // onglet. L'indisponibilité porte donc un autre nom.
+  const unavailable =
+    loadFailed &&
+    structure.faculties.length === 0 &&
+    structure.programs.length === 0
+
+  /**
+   * Rien n'a pu être chargé : mieux vaut n'afficher que la panne. Laisser les
+   * compteurs à zéro et les états vides sous la bannière reviendrait à décrire
+   * un établissement vide, ce qui est faux et pousse à recréer l'existant.
+   */
+  if (unavailable) {
+    return (
+      <AppShell
+        role="admin"
+        requiredRole="admin"
+        title="Structure académique"
+        subtitle="Préparez votre établissement avant d’inscrire des étudiants"
+      >
+        <Link
+          href="/admin"
+          className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink/50 transition-colors hover:text-ink"
+        >
+          ← Retour au pilotage
+        </Link>
+        <LoadError onRetry={retry} retrying={retrying} />
+      </AppShell>
+    )
+  }
+
   return (
     <AppShell
       role="admin"
@@ -139,6 +185,10 @@ export default function AdminStructurePage() {
       >
         ← Retour au pilotage
       </Link>
+
+      {loadFailed && (
+        <LoadError className="mb-5" onRetry={retry} retrying={retrying} />
+      )}
 
       {/* ------------------------------------------------------ synthèse */}
       <Card>

@@ -3,25 +3,25 @@ import { useRouter } from 'next/router'
 import { cn } from '../ui/cn'
 import { Wordmark } from '../brand/Wordmark'
 import { SettingsIcon, LogoutIcon } from '../ui/icons'
+import { activeHref } from './navConfig'
 import type { NavItem } from './navConfig'
 
 interface SidebarProps {
   nav: NavItem[]
   home: string
+  /** Page de paramètres du rôle ; sans elle, le lien n'est pas rendu. */
+  settingsHref?: string
   onLogout: () => void
-}
-
-function isActive(pathname: string, href: string, home: string) {
-  if (href === home) return pathname === home
-  return pathname === href || pathname.startsWith(href + '/')
 }
 
 /**
  * Floating icon rail that expands on hover (group-hover, CSS-only).
  * Collapsed 76px → expanded 252px, floating over content. Desktop only.
  */
-export function Sidebar({ nav, home, onLogout }: SidebarProps) {
-  const { pathname } = useRouter()
+export function Sidebar({ nav, home, settingsHref, onLogout }: SidebarProps) {
+  const { pathname, asPath } = useRouter()
+  const current = activeHref(nav, home, pathname, asPath)
+  const settingsActive = Boolean(settingsHref && pathname === settingsHref)
 
   return (
     <aside
@@ -43,7 +43,7 @@ export function Sidebar({ nav, home, onLogout }: SidebarProps) {
       {/* nav */}
       <nav className="flex-1 space-y-1 px-3 py-2">
         {nav.map((item) => {
-          const active = isActive(pathname, item.href, home)
+          const active = item.href === current
           return (
             <Link
               key={item.href}
@@ -70,15 +70,26 @@ export function Sidebar({ nav, home, onLogout }: SidebarProps) {
 
       {/* footer */}
       <div className="space-y-1 px-3 pb-4">
-        <Link
-          href={`${home}`}
-          className="text-ink/55 flex items-center rounded-2xl px-[14px] py-[11px] transition-colors duration-200 hover:bg-cloud hover:text-ink"
-        >
-          <SettingsIcon size={21} />
-          <span className="ml-3 whitespace-nowrap text-[14px] font-medium opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-            Paramètres
-          </span>
-        </Link>
+        {settingsHref && (
+          <Link
+            href={settingsHref}
+            className={cn(
+              'relative flex items-center rounded-2xl px-[14px] py-[11px] transition-colors duration-200',
+              settingsActive
+                ? 'bg-oca-tint text-oca'
+                : 'text-ink/55 hover:bg-cloud hover:text-ink'
+            )}
+            aria-current={settingsActive ? 'page' : undefined}
+          >
+            {settingsActive && (
+              <span className="absolute left-0 top-1/2 h-5 w-1 -translate-x-1 -translate-y-1/2 rounded-full bg-oca" />
+            )}
+            <SettingsIcon size={21} />
+            <span className="ml-3 whitespace-nowrap text-[14px] font-medium opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              Paramètres
+            </span>
+          </Link>
+        )}
         <button
           onClick={onLogout}
           className="text-ink/55 flex w-full items-center rounded-2xl px-[14px] py-[11px] transition-colors duration-200 hover:bg-red-50 hover:text-red-600"

@@ -1,23 +1,20 @@
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { cn } from '../ui/cn'
+import { activeHref } from './navConfig'
 import type { NavItem } from './navConfig'
-
-function isActive(pathname: string, href: string, home: string) {
-  if (href === home) return pathname === home
-  return pathname === href || pathname.startsWith(href + '/')
-}
 
 /** Floating glass tab bar. Mobile only. */
 export function MobileNav({ nav, home }: { nav: NavItem[]; home: string }) {
-  const { pathname } = useRouter()
+  const { pathname, asPath } = useRouter()
+  const current = activeHref(nav, home, pathname, asPath)
   return (
     <nav
       className="bg-white/85 fixed inset-x-4 bottom-4 z-40 flex items-center justify-around rounded-full border border-hairline px-2 py-1.5 shadow-lift backdrop-blur-xl md:hidden"
       aria-label="Navigation"
     >
       {nav.map((item) => {
-        const active = isActive(pathname, item.href, home)
+        const active = item.href === current
         return (
           <Link
             key={item.href}

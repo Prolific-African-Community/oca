@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '../ui/cn';
 import { Avatar } from '../ui/Avatar';
@@ -11,10 +12,12 @@ interface TopbarProps {
   roleLabel: string;
   onLogout: () => void;
   onOpenCommand?: () => void;
+  /** Page de paramètres du rôle ; absente, l'entrée du menu n'est pas rendue. */
+  settingsHref?: string;
   bare?: boolean;
 }
 
-export function Topbar({ title, subtitle, action, userName, roleLabel, onLogout, onOpenCommand, bare }: TopbarProps) {
+export function Topbar({ title, subtitle, action, userName, roleLabel, onLogout, onOpenCommand, settingsHref, bare }: TopbarProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -100,9 +103,16 @@ export function Topbar({ title, subtitle, action, userName, roleLabel, onLogout,
                 </div>
               </div>
               <div className="my-1 h-px bg-hairline" />
-              <button className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink/70 transition-colors hover:bg-cloud" role="menuitem">
-                <SettingsIcon size={18} /> Paramètres
-              </button>
+              {settingsHref && (
+                <Link
+                  href={settingsHref}
+                  onClick={() => setOpen(false)}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink/70 no-underline transition-colors hover:bg-cloud"
+                  role="menuitem"
+                >
+                  <SettingsIcon size={18} /> Paramètres
+                </Link>
+              )}
               <button
                 onClick={onLogout}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-red-600 transition-colors hover:bg-red-50"

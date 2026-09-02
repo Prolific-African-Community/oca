@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { AppShell } from '../../components/app/AppShell'
+import { LoadError } from '../../components/admin/LoadState'
 import { Card } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { Avatar } from '../../components/ui/Avatar'
@@ -137,22 +138,41 @@ export default function AdminProfessorsPage() {
   const [resettingId, setResettingId] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [temporary, setTemporary] = useState<TemporaryPassword | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [retrying, setRetrying] = useState(false)
 
+  /**
+   * L'échec de chargement remonte à l'écran : une base injoignable ne doit pas
+   * se présenter comme un établissement sans professeurs.
+   */
   const load = useCallback(async () => {
-    const [t, a, s] = await Promise.all([
-      fetch('/api/admin/teachers').then((r) => (r.ok ? r.json() : [])),
-      fetch('/api/admin/assignments').then((r) => (r.ok ? r.json() : [])),
-      fetch('/api/admin/structure').then((r) => (r.ok ? r.json() : null)),
+    const [tRes, aRes, sRes] = await Promise.all([
+      fetch('/api/admin/teachers'),
+      fetch('/api/admin/assignments'),
+      fetch('/api/admin/structure'),
     ])
+    if (!tRes.ok || !aRes.ok || !sRes.ok) throw new Error('unavailable')
+
+    const t = await tRes.json()
+    const a = await aRes.json()
+    const s = await sRes.json()
     setTeachers(Array.isArray(t) ? t : [])
     setAssignments(Array.isArray(a) ? a : [])
     setCourses(s?.courses ?? [])
     setSemesters(s?.semesters ?? [])
     setPrograms(s?.programs ?? [])
+    setLoadFailed(false)
   }, [])
 
+  const retry = useCallback(() => {
+    setRetrying(true)
+    load()
+      .catch(() => setLoadFailed(true))
+      .then(() => setRetrying(false))
+  }, [load])
+
   useEffect(() => {
-    load().catch(() => undefined)
+    load().catch(() => setLoadFailed(true))
   }, [load])
 
   // `?mode=assign` amène directement sur ce qu'il reste à affecter.
@@ -374,6 +394,32 @@ export default function AdminProfessorsPage() {
     }
   }
 
+  const blocked = loadFailed && teachers.length === 0 && courses.length === 0
+
+  /**
+   * Rien n'a pu être chargé : mieux vaut n'afficher que la panne. Laisser les
+   * compteurs à zéro et les états vides sous la bannière reviendrait à décrire
+   * un établissement vide, ce qui est faux et pousse à recréer l'existant.
+   */
+  if (blocked) {
+    return (
+      <AppShell
+        role="admin"
+        requiredRole="admin"
+        title="Professeurs"
+        subtitle="Créez les comptes enseignants et confiez-leur des cours"
+      >
+        <Link
+          href="/admin"
+          className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink/50 transition-colors hover:text-ink"
+        >
+          ← Retour au pilotage
+        </Link>
+        <LoadError onRetry={retry} retrying={retrying} />
+      </AppShell>
+    )
+  }
+
   return (
     <AppShell
       role="admin"
@@ -397,6 +443,10 @@ export default function AdminProfessorsPage() {
       >
         ← Retour au pilotage
       </Link>
+
+      {loadFailed && (
+        <LoadError className="mb-5" onRetry={retry} retrying={retrying} />
+      )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Metric label="Professeurs" value={teachers.length} />
@@ -471,8 +521,8 @@ export default function AdminProfessorsPage() {
           {courses.length === 0 ? (
             <EmptyState
               icon={<BookIcon size={22} />}
-              title="Aucun cours"
-              description="Créez d’abord des cours dans la structure académique."
+              title="Aucun cours à confier"
+              description="Une affectation relie un enseignant à un cours existant. Tant qu’aucun cours n’est créé, il n’y a rien à attribuer."
               action={
                 <Link
                   href="/admin/structure?tab=course"
@@ -661,7 +711,7 @@ export default function AdminProfessorsPage() {
           <EmptyState
             icon={<CapIcon size={22} />}
             title="Aucun professeur"
-            description="Ajoutez un premier enseignant pour pouvoir lui confier des cours."
+            description="Sans enseignant affecté, un cours n’a personne pour le préparer : les étudiants y accèdent, mais il reste vide."
             action={
               <button
                 onClick={() => setCreating(true)}

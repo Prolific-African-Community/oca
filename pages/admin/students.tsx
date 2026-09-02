@@ -3,6 +3,7 @@ import { requireRoleSSR } from '../../lib/pageGuard'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { AppShell } from '../../components/app/AppShell'
+import { LoadError } from '../../components/admin/LoadState'
 import { Card } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { Avatar } from '../../components/ui/Avatar'
@@ -157,22 +158,41 @@ export default function AdminStudentsPage() {
     unselected?: number
   } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [retrying, setRetrying] = useState(false)
 
+  /**
+   * Un échec de chargement est désormais visible. Auparavant il était avalé :
+   * la page se rendait vide et annonçait « Aucun étudiant », ce qui ne se
+   * distingue pas d'un établissement réellement vide.
+   */
   const load = useCallback(async () => {
-    const [list, s] = await Promise.all([
-      fetch('/api/students/list').then((r) => (r.ok ? r.json() : [])),
-      fetch('/api/admin/structure').then((r) => (r.ok ? r.json() : null)),
+    const [listRes, structRes] = await Promise.all([
+      fetch('/api/students/list'),
+      fetch('/api/admin/structure'),
     ])
+    if (!listRes.ok || !structRes.ok) throw new Error('unavailable')
+
+    const list = await listRes.json()
+    const s = await structRes.json()
     setStudents(Array.isArray(list) ? list : [])
     setStructure({
       programs: s?.programs ?? [],
       academicYears: s?.academicYears ?? [],
       semesters: s?.semesters ?? [],
     })
+    setLoadFailed(false)
   }, [])
 
+  const retry = useCallback(() => {
+    setRetrying(true)
+    load()
+      .catch(() => setLoadFailed(true))
+      .then(() => setRetrying(false))
+  }, [load])
+
   useEffect(() => {
-    load().catch(() => undefined)
+    load().catch(() => setLoadFailed(true))
   }, [load])
 
   const currentYear = structure.academicYears.find((y) => y.isCurrent) ?? null
@@ -589,6 +609,33 @@ export default function AdminStudentsPage() {
     </div>
   )
 
+  const blocked =
+    loadFailed && students.length === 0 && structure.programs.length === 0
+
+  /**
+   * Rien n'a pu être chargé : mieux vaut n'afficher que la panne. Laisser les
+   * compteurs à zéro et les états vides sous la bannière reviendrait à décrire
+   * un établissement vide, ce qui est faux et pousse à recréer l'existant.
+   */
+  if (blocked) {
+    return (
+      <AppShell
+        role="admin"
+        requiredRole="admin"
+        title="Étudiants"
+        subtitle="Inscrivez les étudiants, suivez leurs cohortes et vérifiez leurs accès"
+      >
+        <Link
+          href="/admin"
+          className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink/50 transition-colors hover:text-ink"
+        >
+          ← Retour au pilotage
+        </Link>
+        <LoadError onRetry={retry} retrying={retrying} />
+      </AppShell>
+    )
+  }
+
   return (
     <AppShell
       role="admin"
@@ -612,6 +659,10 @@ export default function AdminStudentsPage() {
       >
         ← Retour au pilotage
       </Link>
+
+      {loadFailed && (
+        <LoadError className="mb-5" onRetry={retry} retrying={retrying} />
+      )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Metric
@@ -660,7 +711,7 @@ export default function AdminStudentsPage() {
           <EmptyState
             icon={<LayersIcon size={22} />}
             title="La structure n’est pas prête"
-            description="Créez d’abord un programme et un semestre : un étudiant s’inscrit toujours dans un semestre."
+            description="Un étudiant s’inscrit toujours dans un semestre : sans programme ni semestre, il n’y aurait rien à quoi le rattacher, et il ne verrait aucun cours."
             action={
               <Link
                 href="/admin/structure"
@@ -810,9 +861,31 @@ export default function AdminStudentsPage() {
         )}
 
         {cohorts.length === 0 ? (
-          <p className="text-ink/45 text-sm">
-            Aucune cohorte : inscrivez des étudiants dans un semestre.
-          </p>
+          <EmptyState
+            icon={<UsersIcon size={22} />}
+            title="Aucune cohorte pour le moment"
+            description="Une cohorte se forme d’elle-même dès que des étudiants partagent un programme et un semestre. C’est elle qui permet de faire progresser toute une promotion d’un seul geste."
+            action={
+              canEnroll ? (
+                <button
+                  onClick={() => {
+                    closePanels()
+                    setEnrolling(true)
+                  }}
+                  className={buttonClasses('primary', 'md')}
+                >
+                  Inscrire un étudiant
+                </button>
+              ) : (
+                <Link
+                  href="/admin/structure"
+                  className={buttonClasses('primary', 'md', 'no-underline')}
+                >
+                  Configurer la structure
+                </Link>
+              )
+            }
+          />
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {cohorts.map((cohort) => (
@@ -1055,7 +1128,7 @@ export default function AdminStudentsPage() {
           <EmptyState
             icon={<UsersIcon size={22} />}
             title="Aucun étudiant"
-            description="Inscrivez votre premier étudiant — cela prend quelques secondes."
+            description="Sans étudiant inscrit, aucun cours n’est suivi et aucune cohorte n’existe. L’inscription crée à la fois le compte et le rattachement à un semestre."
             action={
               canEnroll ? (
                 <button
