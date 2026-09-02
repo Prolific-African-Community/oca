@@ -21,35 +21,79 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   res.setHeader('Cache-Control', 'no-store');
 
-  const [institutions, membershipsByRole, programCount, courseCount, publishedCourses] =
-    await Promise.all([
-      prisma.institution.findMany({
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          country: true,
-          status: true,
-          createdAt: true,
-          members: {
-            where: { role: Role.ADMIN, isActive: true },
-            orderBy: { createdAt: 'asc' },
-            take: 1,
-            select: { user: { select: { email: true } } },
+  const [
+    institutions,
+    membershipsByRole,
+    programCount,
+    courseCount,
+    publishedCourses,
+    semestersByProgram,
+    lastActivity,
+  ] = await Promise.all([
+    prisma.institution.findMany({
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        country: true,
+        status: true,
+        createdAt: true,
+        members: {
+          where: { role: Role.ADMIN, isActive: true },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+          select: {
+            user: {
+              select: { email: true, firstName: true, lastName: true },
+            },
           },
-          _count: { select: { programs: true, courses: true } },
         },
-      }),
-      prisma.institutionUser.groupBy({
-        by: ['role', 'institutionId'],
-        where: { isActive: true },
-        _count: { _all: true },
-      }),
-      prisma.program.count(),
-      prisma.course.count(),
-      prisma.course.count({ where: { status: CourseStatus.PUBLISHED } }),
-    ]);
+        _count: {
+          select: {
+            programs: true,
+            courses: true,
+            faculties: true,
+            academicYears: true,
+          },
+        },
+      },
+    }),
+    prisma.institutionUser.groupBy({
+      by: ['role', 'institutionId'],
+      where: { isActive: true },
+      _count: { _all: true },
+    }),
+    prisma.program.count(),
+    prisma.course.count(),
+    prisma.course.count({ where: { status: CourseStatus.PUBLISHED } }),
+    // Les semestres pendent des programmes, pas de l'établissement :
+    // on les remonte via le programme qui les porte.
+    prisma.program.findMany({
+      select: { institutionId: true, _count: { select: { semesters: true } } },
+    }),
+    // Dernière trace réelle par établissement. Le journal est la seule source
+    // d'activité dont nous disposions : rien n'est inventé ici.
+    prisma.auditLog.groupBy({
+      by: ['institutionId'],
+      _max: { createdAt: true },
+    }),
+  ]);
+
+  const semesterCount = new Map<string, number>();
+  for (const row of semestersByProgram) {
+    semesterCount.set(
+      row.institutionId,
+      (semesterCount.get(row.institutionId) ?? 0) + row._count.semesters
+    );
+  }
+
+  const lastActivityAt = new Map<string, Date>();
+  for (const row of lastActivity) {
+    if (row.institutionId && row._max.createdAt) {
+      lastActivityAt.set(row.institutionId, row._max.createdAt);
+    }
+  }
 
   // Répartition des rôles, globale et par établissement.
   const perInstitution = new Map<string, { admins: number; professors: number; students: number }>();
@@ -89,6 +133,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     },
     institutions: institutions.map((i) => {
       const counts = perInstitution.get(i.id) ?? { admins: 0, professors: 0, students: 0 };
+      const semesters = semesterCount.get(i.id) ?? 0;
+      const admin = i.members[0]?.user ?? null;
+
+      /**
+       * Avancement de la mise en route, dans l'ordre des dépendances réelles :
+       * sans faculté pas de programme, sans semestre pas de cours, sans cours
+       * rien à enseigner. Chaque étape est vraie ou fausse d'après la base.
+       */
+      const setup = {
+        faculty: i._count.faculties > 0,
+        program: i._count.programs > 0,
+        academicYear: i._count.academicYears > 0,
+        semester: semesters > 0,
+        course: i._count.courses > 0,
+        professor: counts.professors > 0,
+        student: counts.students > 0,
+      };
+      const steps = Object.keys(setup) as (keyof typeof setup)[];
+      const done = steps.filter((key) => setup[key]).length;
 
       return {
         id: i.id,
@@ -97,12 +160,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         country: i.country,
         // Forme conservée pour l'écran : 'active' | 'inactive'.
         status: i.status === InstitutionStatus.ACTIVE ? 'active' : 'inactive',
-        adminEmail: i.members[0]?.user.email ?? null,
+        adminEmail: admin?.email ?? null,
+        adminName:
+          admin && (admin.firstName || admin.lastName)
+            ? [admin.firstName, admin.lastName].filter(Boolean).join(' ')
+            : null,
         createdAt: i.createdAt,
+        lastActivityAt: lastActivityAt.get(i.id) ?? null,
+        setup,
+        setupDone: done,
+        setupTotal: steps.length,
         counts: {
           ...counts,
           programs: i._count.programs,
           courses: i._count.courses,
+          faculties: i._count.faculties,
+          academicYears: i._count.academicYears,
+          semesters,
         },
       };
     }),
