@@ -88,9 +88,30 @@ export const roleConfig: Record<string, RoleMeta> = {
   superadmin: {
     label: 'Super Admin',
     home: '/superadmin',
+    /**
+     * Le cockpit tient en une page. Plutôt que d'inventer des routes vides,
+     * « Universités » et « Activité » pointent vers les sections de cette
+     * page. `/superadmin/universities` n'a jamais existé : le lien menait à
+     * une 404.
+     *
+     * Aucune entrée « Paramètres » : il n'existe aujourd'hui aucun réglage de
+     * plateforme réel, et une page de réglages sans réglage serait pire qu'une
+     * absence.
+     */
     nav: [
-      { label: 'Réseau', href: '/superadmin', icon: GlobeIcon },
-      { label: 'Universités', href: '/superadmin/universities', icon: BuildingIcon },
+      { label: 'Pilotage', short: 'Pilotage', href: '/superadmin', icon: GlobeIcon },
+      {
+        label: 'Universités',
+        short: 'Univ.',
+        href: '/superadmin#universites',
+        icon: BuildingIcon,
+      },
+      {
+        label: 'Activité',
+        short: 'Activité',
+        href: '/superadmin#activite',
+        icon: LayersIcon,
+      },
     ],
   },
 };
