@@ -82,6 +82,21 @@ export default function InstitutionDetail() {
   const [retrying, setRetrying] = useState(false)
   const [notFound, setNotFound] = useState(false)
   const [attaching, setAttaching] = useState(false)
+  /** Confirmation en cours pour une ligne : rien n'est fait sans elle. */
+  const [confirming, setConfirming] = useState<{
+    membershipId: string
+    action: 'revoke' | 'restore' | 'reset'
+  } | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  /**
+   * Mot de passe provisoire, gardé en mémoire de page uniquement : il
+   * disparaît au rechargement, et rien ne permet de le réafficher.
+   */
+  const [reset, setReset] = useState<{
+    membershipId: string
+    email: string
+    password: string
+  } | null>(null)
 
   const id = typeof router.query.institutionId === 'string'
     ? router.query.institutionId
@@ -109,6 +124,87 @@ export default function InstitutionDetail() {
   useEffect(() => {
     load().catch(() => setLoadFailed(true))
   }, [load])
+
+  /** Retirer ou rétablir l'accès administrateur d'une personne. */
+  const setAccess = useCallback(
+    async (membershipId: string, action: 'revoke' | 'restore') => {
+      setBusy(membershipId)
+      try {
+        const response = await fetch(
+          `/api/superadmin/institutions/${id}/admins/${membershipId}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action }),
+          }
+        )
+        const data = await response.json().catch(() => ({}))
+
+        if (!response.ok) {
+          toast({
+            title:
+              data.code === 'LAST_ADMIN'
+                ? 'Retrait impossible'
+                : 'Action impossible',
+            description: data.message ?? 'Réessayez dans quelques secondes.',
+            tone: 'error',
+          })
+          return
+        }
+
+        setConfirming(null)
+        await load().catch(() => setLoadFailed(true))
+        toast({
+          title: data.message,
+          tone: data.outcome === 'UNCHANGED' ? 'info' : 'success',
+        })
+      } catch {
+        toast({
+          title: 'Connexion temporairement indisponible',
+          description: 'Réessayez dans quelques secondes.',
+          tone: 'error',
+        })
+      } finally {
+        setBusy(null)
+      }
+    },
+    [id, load, toast]
+  )
+
+  /** Mot de passe provisoire, affiché une seule fois puis oublié. */
+  const resetPassword = useCallback(
+    async (membershipId: string, email: string) => {
+      setBusy(membershipId)
+      try {
+        const response = await fetch(
+          `/api/superadmin/institutions/${id}/admins/${membershipId}/reset-password`,
+          { method: 'POST' }
+        )
+        const data = await response.json().catch(() => ({}))
+
+        if (!response.ok || !data.temporaryPassword) {
+          toast({
+            title: 'Réinitialisation impossible',
+            description: data.message ?? 'Réessayez dans quelques secondes.',
+            tone: 'error',
+          })
+          return
+        }
+
+        setConfirming(null)
+        setReset({ membershipId, email, password: data.temporaryPassword })
+      } catch {
+        toast({
+          title: 'Connexion temporairement indisponible',
+          description: 'Réessayez dans quelques secondes.',
+          tone: 'error',
+        })
+      } finally {
+        setBusy(null)
+      }
+    },
+    [id, toast]
+  )
 
   const retour = (
     <Link
@@ -330,29 +426,190 @@ export default function InstitutionDetail() {
           <ul className="space-y-2">
             {detail.admins.map((a) => {
               const actif = a.membershipActive && a.accountActive
+              // Le dernier administrateur opérationnel ne peut pas être
+              // retiré : l'écran le dit avant que le serveur ne le refuse.
+              const dernier = actif && adminsActifs.length === 1
+              const enCours = busy === a.membershipId
+              const confirmation =
+                confirming?.membershipId === a.membershipId
+                  ? confirming.action
+                  : null
+
               return (
                 <li
                   key={a.membershipId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-hairline p-3"
+                  className="rounded-card border border-hairline p-3"
                 >
-                  <div className="min-w-0 flex-1 basis-56">
-                    <p className="truncate text-[15px] font-medium text-ink">
-                      {a.name ?? a.email}
-                    </p>
-                    <p className="text-ink/45 truncate text-sm">{a.email}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1 basis-56">
+                      <p className="truncate text-[15px] font-medium text-ink">
+                        {a.name ?? a.email}
+                      </p>
+                      <p className="text-ink/45 truncate text-sm">{a.email}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {actif ? (
+                        <Badge tone="success">Actif</Badge>
+                      ) : !a.accountActive ? (
+                        <Badge tone="warning">Compte désactivé</Badge>
+                      ) : (
+                        <Badge tone="warning">Accès retiré</Badge>
+                      )}
+                      <span className="text-ink/35 text-sm">
+                        depuis le {dateCourte(a.since)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {actif ? (
-                      <Badge tone="success">Actif</Badge>
-                    ) : !a.accountActive ? (
-                      <Badge tone="warning">Compte désactivé</Badge>
+
+                  {/* ------------------------------------------- actions */}
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-hairline pt-3">
+                    <button
+                      onClick={() =>
+                        setConfirming({
+                          membershipId: a.membershipId,
+                          action: 'reset',
+                        })
+                      }
+                      disabled={enCours}
+                      className={buttonClasses('ghost', 'md')}
+                    >
+                      Réinitialiser le mot de passe
+                    </button>
+                    {a.membershipActive ? (
+                      <button
+                        onClick={() =>
+                          setConfirming({
+                            membershipId: a.membershipId,
+                            action: 'revoke',
+                          })
+                        }
+                        disabled={enCours || dernier}
+                        title={
+                          dernier
+                            ? 'Cette université doit conserver au moins un administrateur actif.'
+                            : undefined
+                        }
+                        className={buttonClasses('ghost', 'md', 'text-red-600 hover:bg-red-50')}
+                      >
+                        Retirer l’accès
+                      </button>
                     ) : (
-                      <Badge tone="warning">Accès retiré</Badge>
+                      <button
+                        onClick={() =>
+                          setConfirming({
+                            membershipId: a.membershipId,
+                            action: 'restore',
+                          })
+                        }
+                        disabled={enCours}
+                        className={buttonClasses('ghost', 'md')}
+                      >
+                        Rétablir l’accès
+                      </button>
                     )}
-                    <span className="text-ink/35 text-sm">
-                      depuis le {dateCourte(a.since)}
-                    </span>
                   </div>
+
+                  {/* Pourquoi le retrait est indisponible, plutôt qu'un
+                      bouton grisé sans explication. */}
+                  {dernier && (
+                    <p className="text-ink/45 mt-2 text-sm">
+                      Cette université doit conserver au moins un
+                      administrateur actif. Rattachez-en un autre avant de
+                      retirer celui-ci.
+                    </p>
+                  )}
+
+                  {/* --------------------------------------- confirmation */}
+                  {confirmation && (
+                    <div className="mt-3 rounded-card border border-hairline bg-cloud/60 p-3">
+                      {confirmation === 'revoke' && (
+                        <p className="text-sm text-ink">
+                          Retirer l’accès administrateur de{' '}
+                          <span className="font-medium">{a.email}</span> pour
+                          cette université ? Son compte est conservé, ainsi que
+                          ses éventuels autres rôles et ses autres
+                          établissements. Seul l’accès administrateur à{' '}
+                          {detail.name} est retiré, et il peut être rétabli.
+                        </p>
+                      )}
+                      {confirmation === 'restore' && (
+                        <p className="text-sm text-ink">
+                          Rétablir l’accès administrateur de{' '}
+                          <span className="font-medium">{a.email}</span> pour
+                          cette université ? Cette personne pourra de nouveau
+                          ouvrir et piloter {detail.name}.
+                        </p>
+                      )}
+                      {confirmation === 'reset' && (
+                        <p className="text-sm text-ink">
+                          Réinitialiser le mot de passe de{' '}
+                          <span className="font-medium">{a.email}</span> ? Un
+                          mot de passe provisoire sera affiché{' '}
+                          <span className="font-medium">une seule fois</span> —
+                          notez-le, il ne sera pas envoyé par email et ne
+                          pourra pas être réaffiché. Les sessions déjà ouvertes
+                          peuvent rester actives.
+                        </p>
+                      )}
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          size="md"
+                          className={
+                            confirmation === 'revoke'
+                              ? 'bg-red-600 hover:bg-red-700'
+                              : undefined
+                          }
+                          disabled={enCours}
+                          onClick={() =>
+                            confirmation === 'reset'
+                              ? resetPassword(a.membershipId, a.email)
+                              : setAccess(a.membershipId, confirmation)
+                          }
+                        >
+                          {enCours
+                            ? 'En cours…'
+                            : confirmation === 'revoke'
+                            ? 'Retirer l’accès'
+                            : confirmation === 'restore'
+                            ? 'Rétablir'
+                            : 'Réinitialiser'}
+                        </Button>
+                        <Button
+                          size="md"
+                          variant="secondary"
+                          disabled={enCours}
+                          onClick={() => setConfirming(null)}
+                        >
+                          Annuler
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ------------------- mot de passe, affiché une seule fois */}
+                  {reset?.membershipId === a.membershipId && (
+                    <div className="mt-3 rounded-card border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-sm font-medium text-amber-900">
+                        Mot de passe provisoire de {reset.email}
+                      </p>
+                      <p className="mt-1.5 break-all rounded-xl border border-amber-200 bg-white px-3 py-2 font-mono text-[15px] text-ink">
+                        {reset.password}
+                      </p>
+                      <p className="mt-1.5 text-sm text-amber-800">
+                        Transmettez-le par un canal sûr. Il ne sera plus
+                        affiché après fermeture, ni au rechargement de la page.
+                      </p>
+                      <Button
+                        size="md"
+                        variant="secondary"
+                        className="mt-3"
+                        onClick={() => setReset(null)}
+                      >
+                        J’ai noté ce mot de passe
+                      </Button>
+                    </div>
+                  )}
                 </li>
               )
             })}
