@@ -50,6 +50,11 @@ model User {
   /// Renseigné uniquement pour les administrateurs de la plateforme (SUPER_ADMIN).
   platformRole Role?
   isActive     Boolean  @default(true)
+  /// Incrémenté à chaque changement de mot de passe. Les jetons de session
+  /// portent la valeur en vigueur au moment de leur émission : changer de
+  /// mot de passe invalide donc immédiatement toutes les sessions ouvertes,
+  /// y compris sur d'autres appareils.
+  tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

@@ -60,7 +60,13 @@ export default async function handler(
 
   await prisma.user.update({
     where: { id: membership.user.id },
-    data: { passwordHash: await bcrypt.hash(password, 10) },
+    data: {
+      passwordHash: await bcrypt.hash(password, 10),
+      // Une réinitialisation sert souvent à reprendre la main sur un compte
+      // compromis : les sessions déjà ouvertes doivent tomber avec l'ancien
+      // mot de passe, sans quoi l'intrus resterait connecté.
+      tokenVersion: { increment: 1 },
+    },
   })
 
   await createAuditLog({

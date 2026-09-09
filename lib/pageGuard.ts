@@ -14,8 +14,10 @@ import { prisma } from './prisma';
  */
 export function requireRoleSSR(allowed: Role[]): GetServerSideProps {
   return async (ctx: GetServerSidePropsContext) => {
-    const userId = readSessionToken(ctx.req.cookies?.[SESSION_COOKIE]);
-    const user = userId ? await getUserById(userId) : null;
+    const identity = readSessionToken(ctx.req.cookies?.[SESSION_COOKIE]);
+    const user = identity
+      ? await getUserById(identity.userId, identity.tokenVersion)
+      : null;
 
     if (!user) {
       return {
@@ -41,6 +43,29 @@ export function requireRoleSSR(allowed: Role[]): GetServerSideProps {
 }
 
 /**
+ * Page réservée aux personnes connectées, sans exigence de rôle.
+ *
+ * Certaines pages relèvent du compte lui-même — changer son mot de passe, par
+ * exemple — et non d'un rôle. `requireRoleSSR` ne convient pas : un compte
+ * valide mais sans rôle actif (appartenance révoquée) serait renvoyé au login
+ * alors qu'il doit pouvoir sécuriser son propre accès.
+ */
+export function requireAuthenticatedPage(): GetServerSideProps {
+  return async (ctx: GetServerSidePropsContext) => {
+    const identity = readSessionToken(ctx.req.cookies?.[SESSION_COOKIE]);
+    const user = identity
+      ? await getUserById(identity.userId, identity.tokenVersion)
+      : null;
+
+    if (!user) {
+      return { redirect: { destination: '/login', permanent: false } };
+    }
+
+    return { props: {} };
+  };
+}
+
+/**
  * Page de cours enseignant : rôle PROFESSOR **et** affectation au cours.
  * Sans cela, la coquille de page se rendrait pour n'importe quel professeur,
  * même non affecté — l'API refuserait les données, mais autant fermer la porte
@@ -48,8 +73,10 @@ export function requireRoleSSR(allowed: Role[]): GetServerSideProps {
  */
 export function requireAssignedCoursePage(): GetServerSideProps {
   return async (ctx: GetServerSidePropsContext) => {
-    const userId = readSessionToken(ctx.req.cookies?.[SESSION_COOKIE]);
-    const user = userId ? await getUserById(userId) : null;
+    const identity = readSessionToken(ctx.req.cookies?.[SESSION_COOKIE]);
+    const user = identity
+      ? await getUserById(identity.userId, identity.tokenVersion)
+      : null;
 
     const membership = user?.memberships.find((m) => m.role === Role.PROFESSOR);
 
@@ -85,8 +112,10 @@ export function requireAssignedCoursePage(): GetServerSideProps {
  */
 export function requireEnrolledCoursePage(): GetServerSideProps {
   return async (ctx: GetServerSidePropsContext) => {
-    const userId = readSessionToken(ctx.req.cookies?.[SESSION_COOKIE]);
-    const user = userId ? await getUserById(userId) : null;
+    const identity = readSessionToken(ctx.req.cookies?.[SESSION_COOKIE]);
+    const user = identity
+      ? await getUserById(identity.userId, identity.tokenVersion)
+      : null;
 
     const membership = user?.memberships.find((m) => m.role === Role.STUDENT);
 

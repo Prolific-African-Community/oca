@@ -49,21 +49,40 @@ interface SessionPayload {
   uid: string;
   /** Expiration, en secondes epoch. */
   exp: number;
+  /**
+   * Version du mot de passe au moment de l'émission. Comparée à
+   * `User.tokenVersion` lors du chargement de l'utilisateur : un changement de
+   * mot de passe rend caducs tous les jetons émis avant.
+   */
+  tv?: number;
+}
+
+/** Identité portée par un jeton valide. */
+export interface SessionIdentity {
+  userId: string;
+  tokenVersion: number;
 }
 
 /** Fabrique un jeton de session signé pour un utilisateur. */
-export function createSessionToken(userId: string): string {
+export function createSessionToken(userId: string, tokenVersion = 0): string {
   const payload: SessionPayload = {
     uid: userId,
     exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE,
+    tv: tokenVersion,
   };
 
   const encoded = base64url(JSON.stringify(payload));
   return `${encoded}.${sign(encoded)}`;
 }
 
-/** Vérifie signature et expiration. Retourne l'identifiant utilisateur, ou null. */
-export function readSessionToken(token: string | undefined): string | null {
+/**
+ * Vérifie signature et expiration. Retourne l'identité portée, ou null.
+ *
+ * Un jeton émis avant l'introduction de `tv` est lu comme version 0, ce qui
+ * correspond au défaut en base : les sessions déjà ouvertes survivent au
+ * déploiement, et seront invalidées au premier changement de mot de passe.
+ */
+export function readSessionToken(token: string | undefined): SessionIdentity | null {
   if (!token) return null;
 
   const [encoded, signature] = token.split('.');
@@ -78,7 +97,10 @@ export function readSessionToken(token: string | undefined): string | null {
     const payload = JSON.parse(fromBase64url(encoded).toString('utf8')) as SessionPayload;
     if (!payload.uid || typeof payload.exp !== 'number') return null;
     if (payload.exp * 1000 < Date.now()) return null;
-    return payload.uid;
+    return {
+      userId: payload.uid,
+      tokenVersion: typeof payload.tv === 'number' ? payload.tv : 0,
+    };
   } catch {
     return null;
   }
@@ -101,8 +123,11 @@ function serializeCookie(value: string, maxAge: number): string {
 }
 
 /** Pose le cookie de session sur la réponse. */
-export function setSessionCookie(res: NextApiResponse, userId: string) {
-  res.setHeader('Set-Cookie', serializeCookie(createSessionToken(userId), SESSION_MAX_AGE));
+export function setSessionCookie(res: NextApiResponse, userId: string, tokenVersion = 0) {
+  res.setHeader(
+    'Set-Cookie',
+    serializeCookie(createSessionToken(userId, tokenVersion), SESSION_MAX_AGE)
+  );
 }
 
 /** Efface le cookie de session. */
@@ -110,7 +135,7 @@ export function clearSessionCookie(res: NextApiResponse) {
   res.setHeader('Set-Cookie', serializeCookie('', 0));
 }
 
-/** Lit l'identifiant utilisateur porté par la requête, sans toucher la base. */
-export function getSessionUserId(req: NextApiRequest): string | null {
+/** Lit l'identité portée par la requête, sans toucher la base. */
+export function getSessionIdentity(req: NextApiRequest): SessionIdentity | null {
   return readSessionToken(req.cookies?.[SESSION_COOKIE]);
 }

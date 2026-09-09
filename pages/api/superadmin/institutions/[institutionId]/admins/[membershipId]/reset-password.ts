@@ -63,7 +63,12 @@ export default async function handler(
 
     await prisma.user.update({
       where: { id: membership.userId },
-      data: { passwordHash },
+      data: {
+        passwordHash,
+        // Reprendre la main sur un compte suppose de fermer les sessions
+        // ouvertes avec l'ancien mot de passe.
+        tokenVersion: { increment: 1 },
+      },
     })
 
     await createAuditLog({

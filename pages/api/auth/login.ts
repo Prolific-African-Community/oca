@@ -46,7 +46,7 @@ export default async function handler(
 
   const user = await prisma.user.findUnique({
     where: { email: normalizedEmail },
-    select: { id: true, passwordHash: true, isActive: true },
+    select: { id: true, passwordHash: true, isActive: true, tokenVersion: true },
   })
 
   // Message volontairement identique dans tous les cas d'échec :
@@ -72,7 +72,7 @@ export default async function handler(
   if (!safeUser) return invalid()
 
   clearLoginFailures(throttleKey)
-  setSessionCookie(res, safeUser.id)
+  setSessionCookie(res, safeUser.id, user.tokenVersion)
 
   return res.status(200).json({
     user: safeUser,

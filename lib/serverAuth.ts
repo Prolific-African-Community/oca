@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { Role } from '@prisma/client';
 import { prisma } from './prisma';
-import { getSessionUserId } from './session';
+import { getSessionIdentity } from './session';
 
 /**
  * Lecture de l'utilisateur courant côté serveur.
@@ -37,6 +37,7 @@ const safeUserSelect = {
   lastName: true,
   platformRole: true,
   isActive: true,
+  tokenVersion: true,
   memberships: {
     where: { isActive: true },
     select: {
@@ -84,16 +85,27 @@ export function homeForRole(role: Role | null): string {
   }
 }
 
-/** Charge un utilisateur actif par son identifiant, sous forme sûre. */
-export async function getUserById(userId: string): Promise<SafeUser | null> {
+/**
+ * Charge un utilisateur actif par son identifiant, sous forme sûre.
+ *
+ * `tokenVersion` est la version portée par le jeton de session. Quand elle est
+ * fournie et ne correspond plus à celle du compte, le jeton a été émis avant
+ * un changement de mot de passe : il est refusé. C'est le point de passage
+ * unique de toutes les sessions, API comme pages.
+ */
+export async function getUserById(
+  userId: string,
+  tokenVersion?: number
+): Promise<SafeUser | null> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: safeUserSelect,
   });
 
   if (!user || !user.isActive) return null;
+  if (tokenVersion !== undefined && tokenVersion !== user.tokenVersion) return null;
 
-  const { isActive, ...rest } = user;
+  const { isActive, tokenVersion: _version, ...rest } = user;
 
   return {
     ...rest,
@@ -103,9 +115,9 @@ export async function getUserById(userId: string): Promise<SafeUser | null> {
 
 /** Utilisateur courant d'une requête API, ou null si la session est absente/invalide. */
 export async function getCurrentUser(req: NextApiRequest): Promise<SafeUser | null> {
-  const userId = getSessionUserId(req);
-  if (!userId) return null;
-  return getUserById(userId);
+  const identity = getSessionIdentity(req);
+  if (!identity) return null;
+  return getUserById(identity.userId, identity.tokenVersion);
 }
 
 /* =========================================================================

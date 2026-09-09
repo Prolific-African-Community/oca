@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '../ui/cn';
 import { Avatar } from '../ui/Avatar';
-import { SearchIcon, BellIcon, LogoutIcon, SettingsIcon } from '../ui/icons';
+import { SearchIcon, BellIcon, LogoutIcon, SettingsIcon, ShieldIcon } from '../ui/icons';
 
 interface TopbarProps {
   title: string;
@@ -113,6 +113,16 @@ export function Topbar({ title, subtitle, action, userName, roleLabel, onLogout,
                   <SettingsIcon size={18} /> Paramètres
                 </Link>
               )}
+              {/* Accessible à tous les rôles : l'API ne sait agir que sur le
+                  compte de la session. */}
+              <Link
+                href="/change-password"
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink/70 no-underline transition-colors hover:bg-cloud"
+                role="menuitem"
+              >
+                <ShieldIcon size={18} /> Changer le mot de passe
+              </Link>
               <button
                 onClick={onLogout}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-red-600 transition-colors hover:bg-red-50"

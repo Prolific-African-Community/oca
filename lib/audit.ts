@@ -15,6 +15,11 @@ import { prisma } from './prisma'
 
 /** Verbes métier journalisés. Un seul endroit pour les nommer. */
 export const AuditAction = {
+  /**
+   * Changement de mot de passe par la personne elle-même. Le journal retient
+   * qu'il a eu lieu, jamais l'ancien ni le nouveau secret.
+   */
+  PASSWORD_CHANGED: 'password.changed',
   INSTITUTION_CREATE: 'institution.create',
   /** Compte administrateur créé pour un établissement déjà existant. */
   INSTITUTION_ADMIN_CREATE: 'institution.admin.create',
